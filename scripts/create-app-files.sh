@@ -92,7 +92,7 @@ $user = getCurrentUser();
 </html>
 EOF
 
-    # Create improved login page with better debugging and password reset
+    # Create improved login page with better database connection testing
     cat > $CRM_PATH/login.php << 'EOF'
 <?php
 session_start();
@@ -107,6 +107,16 @@ if (isLoggedIn()) {
 $error = '';
 $debug = '';
 $success = '';
+
+// Test database connection first
+try {
+    $db_test = testDatabaseConnection();
+    if (!$db_test) {
+        $error = "Database connection failed. Please check database configuration.";
+    }
+} catch (Exception $e) {
+    $error = "Database error: " . $e->getMessage();
+}
 
 // Handle password reset
 if (isset($_GET['reset']) && $_GET['reset'] === 'admin') {
@@ -124,7 +134,7 @@ if (isset($_GET['reset']) && $_GET['reset'] === 'admin') {
             $error = "Failed to reset password";
         }
     } catch (Exception $e) {
-        $error = "Database error: " . $e->getMessage();
+        $error = "Database error during reset: " . $e->getMessage();
     }
 }
 
@@ -134,19 +144,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Enhanced debug information
     if (isset($_GET['debug'])) {
-        $debug = "Login attempt for username: " . htmlspecialchars($username) . "<br>";
+        $debug = "=== DATABASE CONNECTION TEST ===<br>";
         
         try {
+            // Test basic database connection
             $db = getDatabase();
-            $debug .= "Database connection: OK<br>";
+            $debug .= "Database connection: SUCCESS<br>";
+            
+            // Test database configuration
+            $config = require 'config/database.php';
+            $debug .= "DB Host: " . $config['host'] . "<br>";
+            $debug .= "DB Name: " . $config['database'] . "<br>";
+            $debug .= "DB User: " . $config['username'] . "<br>";
             
             // Count total users
             $count_stmt = $db->query("SELECT COUNT(*) as count FROM users");
             $count = $count_stmt->fetch()['count'];
-            $debug .= "Users in database: $count<br>";
+            $debug .= "Users in database: $count<br><br>";
+            
+            $debug .= "=== LOGIN ATTEMPT ===<br>";
+            $debug .= "Username: '" . htmlspecialchars($username) . "'<br>";
+            $debug .= "Password length: " . strlen($password) . "<br>";
             
             // Get user details
-            $stmt = $db->prepare("SELECT id, username, password_hash, active FROM users WHERE username = ?");
+            $stmt = $db->prepare("SELECT id, username, password_hash, active, first_name FROM users WHERE username = ?");
             $stmt->execute([$username]);
             $user = $stmt->fetch();
             
@@ -154,41 +175,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $debug .= "User found: YES<br>";
                 $debug .= "User ID: " . $user['id'] . "<br>";
                 $debug .= "User active: " . ($user['active'] ? 'YES' : 'NO') . "<br>";
-                $debug .= "Password hash length: " . strlen($user['password_hash']) . "<br>";
-                $debug .= "Password hash starts with: " . substr($user['password_hash'], 0, 10) . "...<br>";
-                $debug .= "Input password: '" . htmlspecialchars($password) . "'<br>";
-                $debug .= "Input password length: " . strlen($password) . "<br>";
+                $debug .= "Password hash: " . substr($user['password_hash'], 0, 20) . "...<br>";
                 
                 // Test password verification
-                if (substr($user['password_hash'], 0, 4) === '$2y$') {
-                    $bcrypt_result = password_verify($password, $user['password_hash']);
-                    $debug .= "BCrypt verification: " . ($bcrypt_result ? 'SUCCESS' : 'FAILED') . "<br>";
-                } else {
-                    $plain_result = ($user['password_hash'] === $password);
-                    $debug .= "Plain text comparison: " . ($plain_result ? 'SUCCESS' : 'FAILED') . "<br>";
-                    $debug .= "Stored: '" . $user['password_hash'] . "' vs Input: '" . $password . "'<br>";
-                }
+                $verify_result = password_verify($password, $user['password_hash']);
+                $debug .= "Password verify result: " . ($verify_result ? 'SUCCESS' : 'FAILED') . "<br>";
+                
+                // Also test plain text (fallback)
+                $plain_match = ($user['password_hash'] === $password);
+                $debug .= "Plain text match: " . ($plain_match ? 'YES' : 'NO') . "<br>";
+                
             } else {
                 $debug .= "User found: NO<br>";
                 
                 // Show all users
-                $all_users = $db->query("SELECT username, active FROM users")->fetchAll();
-                $debug .= "Available users: ";
+                $all_users = $db->query("SELECT username, active, password_hash FROM users")->fetchAll();
+                $debug .= "Available users:<br>";
                 foreach ($all_users as $u) {
-                    $debug .= $u['username'] . " (active: " . ($u['active'] ? 'YES' : 'NO') . "), ";
+                    $debug .= "- " . $u['username'] . " (active: " . ($u['active'] ? 'YES' : 'NO') . 
+                             ", hash: " . substr($u['password_hash'], 0, 10) . "...)<br>";
                 }
-                $debug .= "<br>";
             }
         } catch (Exception $e) {
-            $debug .= "Database error: " . $e->getMessage() . "<br>";
+            $debug .= "ERROR: " . $e->getMessage() . "<br>";
+            $debug .= "Error details: " . $e->getTraceAsString() . "<br>";
         }
     }
     
-    if (login($username, $password)) {
-        header('Location: index.php');
-        exit;
-    } else {
-        $error = 'Invalid username or password';
+    if (!empty($username) && !empty($password) && empty($error)) {
+        if (login($username, $password)) {
+            header('Location: index.php');
+            exit;
+        } else {
+            $error = 'Invalid username or password. Try debug mode or reset password.';
+        }
     }
 }
 ?>
@@ -218,7 +238,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <?php endif; ?>
                         
                         <?php if ($debug): ?>
-                            <div class="alert alert-info">
+                            <div class="alert alert-info" style="max-height: 300px; overflow-y: auto;">
                                 <strong>Debug Info:</strong><br>
                                 <?= $debug ?>
                             </div>
@@ -227,19 +247,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <form method="POST">
                             <div class="mb-3">
                                 <label for="username" class="form-label">Username</label>
-                                <input type="text" class="form-control" id="username" name="username" value="<?= htmlspecialchars($_POST['username'] ?? 'admin') ?>" required>
+                                <input type="text" class="form-control" id="username" name="username" 
+                                       value="<?= htmlspecialchars($_POST['username'] ?? 'admin') ?>" required>
                             </div>
                             <div class="mb-3">
                                 <label for="password" class="form-label">Password</label>
-                                <input type="password" class="form-control" id="password" name="password" placeholder="admin123" required>
+                                <input type="password" class="form-control" id="password" name="password" 
+                                       placeholder="admin123" required>
                             </div>
                             <button type="submit" class="btn btn-primary w-100">Login</button>
                         </form>
                         <div class="mt-3 text-center">
                             <small class="text-muted">
-                                Default login: admin / admin123<br>
-                                <a href="?debug=1" class="text-decoration-none">Enable Debug Mode</a> | 
-                                <a href="?reset=admin" class="text-decoration-none text-warning">Reset Admin Password</a>
+                                Default: admin / admin123<br>
+                                <a href="?debug=1" class="text-decoration-none">Debug Mode</a> | 
+                                <a href="?reset=admin" class="text-decoration-none text-warning">Reset Password</a>
                             </small>
                         </div>
                     </div>
@@ -400,7 +422,7 @@ function initiateCall($extension, $phone) {
 ?>
 EOF
 
-    # Create robust authentication system with better password handling
+    # Create improved authentication with better error handling
     cat > $CRM_PATH/includes/auth.php << 'EOF'
 <?php
 require_once 'database.php';
@@ -428,47 +450,45 @@ function getCurrentUser() {
 function login($username, $password) {
     try {
         $db = getDatabase();
+        if (!$db) {
+            error_log("Login failed: Cannot connect to database");
+            return false;
+        }
+        
         $stmt = $db->prepare("SELECT * FROM users WHERE username = ? AND active = 1");
         $stmt->execute([$username]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$user) {
-            error_log("Login failed: User '$username' not found");
+            error_log("Login failed: User '$username' not found or inactive");
             return false;
         }
         
         $password_valid = false;
         $stored_hash = $user['password_hash'];
         
-        // Handle different password storage formats
         if (empty($stored_hash)) {
             error_log("Login failed: Empty password hash for user '$username'");
             return false;
         }
         
-        // Check if it's a bcrypt hash (starts with $2y$)
-        if (substr($stored_hash, 0, 4) === '$2y$') {
-            // Standard bcrypt hash
-            if (password_verify($password, $stored_hash)) {
-                $password_valid = true;
-                error_log("Login successful: BCrypt verification for user '$username'");
-            } else {
-                error_log("Login failed: BCrypt verification failed for user '$username'");
-            }
+        // Check bcrypt hash first (preferred)
+        if (password_verify($password, $stored_hash)) {
+            $password_valid = true;
+            error_log("Login successful: BCrypt verification for user '$username'");
+        } 
+        // Fallback to plain text for initial setup
+        else if ($stored_hash === $password) {
+            $password_valid = true;
+            error_log("Login successful: Plain text verification for user '$username' - upgrading to BCrypt");
+            
+            // Upgrade to bcrypt hash
+            $new_hash = password_hash($password, PASSWORD_DEFAULT);
+            $update_stmt = $db->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
+            $update_stmt->execute([$new_hash, $user['id']]);
         } else {
-            // Plain text password (fallback for initial setup)
-            if ($stored_hash === $password) {
-                $password_valid = true;
-                error_log("Login successful: Plain text verification for user '$username'");
-                
-                // Upgrade to bcrypt hash
-                $new_hash = password_hash($password, PASSWORD_DEFAULT);
-                $update_stmt = $db->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
-                $update_stmt->execute([$new_hash, $user['id']]);
-                error_log("Password upgraded to bcrypt for user '$username'");
-            } else {
-                error_log("Login failed: Plain text verification failed for user '$username'");
-            }
+            error_log("Login failed: Password verification failed for user '$username'");
+            return false;
         }
         
         if ($password_valid) {
@@ -515,9 +535,7 @@ function requireRole($required_role) {
 ?>
 EOF
 
-    # ... keep existing code (database.php remains the same)
-    
-    # Create improved database connection
+    # Create improved database connection with better error handling
     cat > $CRM_PATH/includes/database.php << 'EOF'
 <?php
 function getDatabase() {
@@ -525,19 +543,35 @@ function getDatabase() {
     
     if ($pdo === null) {
         try {
-            $config = require __DIR__ . '/../config/database.php';
+            $config_path = __DIR__ . '/../config/database.php';
+            if (!file_exists($config_path)) {
+                error_log("Database config file not found: $config_path");
+                throw new Exception("Database configuration file not found");
+            }
+            
+            $config = require $config_path;
+            if (!$config || !is_array($config)) {
+                error_log("Invalid database configuration");
+                throw new Exception("Invalid database configuration");
+            }
+            
             $dsn = "mysql:host={$config['host']};dbname={$config['database']};charset={$config['charset']}";
             
             $options = [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 PDO::ATTR_EMULATE_PREPARES => false,
+                PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4"
             ];
             
             $pdo = new PDO($dsn, $config['username'], $config['password'], $options);
+            error_log("Database connection established successfully");
         } catch (PDOException $e) {
-            error_log("Database connection failed: " . $e->getMessage());
-            throw new Exception("Database connection failed");
+            error_log("Database PDO connection failed: " . $e->getMessage());
+            throw new Exception("Database connection failed: " . $e->getMessage());
+        } catch (Exception $e) {
+            error_log("Database connection error: " . $e->getMessage());
+            throw new Exception("Database error: " . $e->getMessage());
         }
     }
     
@@ -548,7 +582,8 @@ function testDatabaseConnection() {
     try {
         $db = getDatabase();
         $stmt = $db->query("SELECT 1");
-        return true;
+        $result = $stmt->fetch();
+        return $result !== false;
     } catch (Exception $e) {
         error_log("Database test failed: " . $e->getMessage());
         return false;
