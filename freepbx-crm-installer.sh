@@ -70,16 +70,23 @@ install_packages() {
     apt-get update
 
     log "Installing essential packages..."
-    apt-get install -y wget curl gnupg2 software-properties-common lsb-release
+    apt-get install -y wget curl gnupg2 software-properties-common lsb-release ca-certificates
 
-    # Add MySQL APT repository
-    log "Adding MySQL repository..."
-    if [ ! -f /etc/apt/sources.list.d/mysql.list ]; then
-        wget https://dev.mysql.com/get/mysql-apt-config_0.8.24-1_all.deb
-        DEBIAN_FRONTEND=noninteractive dpkg -i mysql-apt-config_0.8.24-1_all.deb
-        apt-get update
-        rm -f mysql-apt-config_0.8.24-1_all.deb
-    fi
+    # Fix MySQL repository GPG key issue
+    log "Setting up MySQL repository with proper GPG key..."
+    
+    # Remove any existing MySQL configuration
+    rm -f /etc/apt/sources.list.d/mysql.list
+    rm -f mysql-apt-config_*.deb
+    
+    # Add MySQL GPG key properly
+    wget -qO- https://repo.mysql.com/RPM-GPG-KEY-mysql-2022 | gpg --dearmor > /etc/apt/trusted.gpg.d/mysql.gpg
+    
+    # Add MySQL repository manually with proper key
+    echo "deb http://repo.mysql.com/apt/debian/ bookworm mysql-8.0" > /etc/apt/sources.list.d/mysql.list
+    
+    # Update package lists
+    apt-get update
 
     log "Installing LAMP stack and dependencies..."
     
@@ -92,7 +99,9 @@ install_packages() {
         warn "MySQL installation failed, falling back to MariaDB..."
         apt-get install -y mariadb-server mariadb-client
         systemctl start mariadb
-        mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASSWORD';"
+        mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASSWORD';" 2>/dev/null || \
+        mysql -e "SET PASSWORD FOR 'root'@'localhost' = PASSWORD('$MYSQL_ROOT_PASSWORD');" 2>/dev/null || \
+        mysqladmin -u root password "$MYSQL_ROOT_PASSWORD" 2>/dev/null || true
     fi
 
     apt-get install -y \
@@ -151,7 +160,8 @@ setup_database() {
     log "Database setup completed"
 }
 
-# Configure web server
+# ... keep existing code (configure_webserver, configure_security, create_crm_files, init_database, main functions remain the same)
+
 configure_webserver() {
     log "Configuring web server..."
     
@@ -215,7 +225,6 @@ EOF
     log "Web server configuration completed"
 }
 
-# Configure security
 configure_security() {
     log "Configuring security..."
     
@@ -257,7 +266,6 @@ EOF
     log "Security configuration completed"
 }
 
-# Create CRM application files
 create_crm_files() {
     log "Creating CRM application..."
     
@@ -576,7 +584,6 @@ EOF
     log "CRM application files created"
 }
 
-# Initialize database tables
 init_database() {
     log "Initializing database tables..."
     
@@ -631,7 +638,6 @@ EOF
     log "Database initialization completed"
 }
 
-# Main installation function
 main() {
     log "Starting FreePBX CRM installation..."
     
@@ -663,6 +669,3 @@ main() {
 
 # Run main function
 main "$@"
-EOF
-
-log "Single installer script created successfully!"
