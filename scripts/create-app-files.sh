@@ -2,6 +2,8 @@
 #!/bin/bash
 
 create_main_files() {
+    # ... keep existing code (index.php creation remains the same)
+    
     # Create main CRM application file
     cat > $CRM_PATH/index.php << 'EOF'
 <?php
@@ -90,7 +92,7 @@ $user = getCurrentUser();
 </html>
 EOF
 
-    # Create improved login page with better debugging
+    # Create improved login page with better debugging and reset option
     cat > $CRM_PATH/login.php << 'EOF'
 <?php
 session_start();
@@ -104,6 +106,27 @@ if (isLoggedIn()) {
 
 $error = '';
 $debug = '';
+$success = '';
+
+// Handle password reset
+if (isset($_GET['reset']) && $_GET['reset'] === 'admin') {
+    try {
+        $db = getDatabase();
+        $new_password = 'admin123';
+        $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
+        
+        $stmt = $db->prepare("UPDATE users SET password_hash = ? WHERE username = 'admin'");
+        $result = $stmt->execute([$hashed_password]);
+        
+        if ($result) {
+            $success = "Admin password has been reset to: admin123";
+        } else {
+            $error = "Failed to reset password";
+        }
+    } catch (Exception $e) {
+        $error = "Database error: " . $e->getMessage();
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = $_POST['username'] ?? '';
@@ -122,9 +145,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($user) {
                 $debug .= "<br>User found in database";
                 $debug .= "<br>User active: " . ($user['active'] ? 'Yes' : 'No');
-                $debug .= "<br>Password check: " . (password_verify($password, $user['password_hash']) ? 'Success' : 'Failed');
+                $debug .= "<br>Stored password hash: " . substr($user['password_hash'], 0, 20) . "...";
+                $debug .= "<br>Password length: " . strlen($password);
+                
+                // Test both methods
+                $bcrypt_check = password_verify($password, $user['password_hash']);
+                $plain_check = ($user['password_hash'] === $password);
+                
+                $debug .= "<br>BCrypt verification: " . ($bcrypt_check ? 'Success' : 'Failed');
+                $debug .= "<br>Plain text check: " . ($plain_check ? 'Success' : 'Failed');
             } else {
                 $debug .= "<br>User not found in database";
+                
+                // Show all users for debugging
+                $stmt = $db->query("SELECT username, active FROM users");
+                $users = $stmt->fetchAll();
+                $debug .= "<br>Available users: ";
+                foreach ($users as $u) {
+                    $debug .= $u['username'] . " (active: " . ($u['active'] ? 'Yes' : 'No') . "), ";
+                }
             }
         } catch (Exception $e) {
             $debug .= "<br>Database error: " . $e->getMessage();
@@ -160,6 +199,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
                         <?php endif; ?>
                         
+                        <?php if ($success): ?>
+                            <div class="alert alert-success"><?= htmlspecialchars($success) ?></div>
+                        <?php endif; ?>
+                        
                         <?php if ($debug): ?>
                             <div class="alert alert-info">
                                 <strong>Debug Info:</strong><br>
@@ -170,18 +213,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <form method="POST">
                             <div class="mb-3">
                                 <label for="username" class="form-label">Username</label>
-                                <input type="text" class="form-control" id="username" name="username" value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" required>
+                                <input type="text" class="form-control" id="username" name="username" value="<?= htmlspecialchars($_POST['username'] ?? 'admin') ?>" required>
                             </div>
                             <div class="mb-3">
                                 <label for="password" class="form-label">Password</label>
-                                <input type="password" class="form-control" id="password" name="password" required>
+                                <input type="password" class="form-control" id="password" name="password" placeholder="admin123" required>
                             </div>
                             <button type="submit" class="btn btn-primary w-100">Login</button>
                         </form>
                         <div class="mt-3 text-center">
                             <small class="text-muted">
                                 Default login: admin / admin123<br>
-                                <a href="?debug=1" class="text-decoration-none">Enable Debug Mode</a>
+                                <a href="?debug=1" class="text-decoration-none">Enable Debug Mode</a> | 
+                                <a href="?reset=admin" class="text-decoration-none text-warning">Reset Admin Password</a>
                             </small>
                         </div>
                     </div>
@@ -193,6 +237,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </html>
 EOF
 
+    # ... keep existing code (logout.php remains the same)
+    
     # Create logout script
     cat > $CRM_PATH/logout.php << 'EOF'
 <?php
@@ -340,7 +386,7 @@ function initiateCall($extension, $phone) {
 ?>
 EOF
 
-    # Create improved authentication system
+    # Create fixed authentication system
     cat > $CRM_PATH/includes/auth.php << 'EOF'
 <?php
 require_once 'database.php';
@@ -373,20 +419,24 @@ function login($username, $password) {
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($user) {
-            // Check if password is hashed or plain text (for initial setup)
             $password_valid = false;
             
-            if (password_verify($password, $user['password_hash'])) {
+            // Check if password starts with $2y$ (bcrypt hash)
+            if (substr($user['password_hash'], 0, 4) === '$2y$') {
                 // Standard hashed password
-                $password_valid = true;
-            } elseif ($user['password_hash'] === $password) {
+                if (password_verify($password, $user['password_hash'])) {
+                    $password_valid = true;
+                }
+            } else {
                 // Plain text password (for initial setup)
-                $password_valid = true;
-                
-                // Hash the password for future use
-                $hashed = password_hash($password, PASSWORD_DEFAULT);
-                $update_stmt = $db->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
-                $update_stmt->execute([$hashed, $user['id']]);
+                if ($user['password_hash'] === $password) {
+                    $password_valid = true;
+                    
+                    // Hash the password for future use
+                    $hashed = password_hash($password, PASSWORD_DEFAULT);
+                    $update_stmt = $db->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
+                    $update_stmt->execute([$hashed, $user['id']]);
+                }
             }
             
             if ($password_valid) {
@@ -434,6 +484,8 @@ function requireRole($required_role) {
 ?>
 EOF
 
+    # ... keep existing code (database.php remains the same)
+    
     # Create improved database connection
     cat > $CRM_PATH/includes/database.php << 'EOF'
 <?php
