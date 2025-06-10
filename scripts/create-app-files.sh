@@ -92,6 +92,8 @@ $user = getCurrentUser();
 </html>
 EOF
 
+    # ... keep existing code (login.php remains the same)
+    
     # Create improved login page with better database connection testing
     cat > $CRM_PATH/login.php << 'EOF'
 <?php
@@ -273,8 +275,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </html>
 EOF
 
-    # ... keep existing code (logout.php remains the same)
-    
     # Create logout script
     cat > $CRM_PATH/logout.php << 'EOF'
 <?php
@@ -594,8 +594,6 @@ EOF
 }
 
 create_asset_files() {
-    # ... keep existing code (style.css and app.js remain the same)
-    
     # Create CSS file
     cat > $CRM_PATH/assets/style.css << 'EOF'
 .sidebar {
@@ -655,7 +653,7 @@ create_asset_files() {
 .priority-low { background: rgba(108, 117, 125, 0.1); }
 EOF
 
-    # Create JavaScript file
+    # Create fixed JavaScript file
     cat > $CRM_PATH/assets/app.js << 'EOF'
 // Main application JavaScript
 
@@ -690,29 +688,33 @@ function loadLeads() {
             let html = '<h2>Lead Management</h2>';
             html += '<div class="row">';
             
-            data.forEach(lead => {
-                html += `
-                    <div class="col-md-4 mb-3">
-                        <div class="card lead-card status-${lead.status} priority-${lead.priority}">
-                            <div class="card-body">
-                                <h5 class="card-title">${lead.first_name} ${lead.last_name}</h5>
-                                <p class="card-text">
-                                    <i class="fas fa-phone"></i> ${lead.phone}<br>
-                                    <i class="fas fa-envelope"></i> ${lead.email}<br>
-                                    <i class="fas fa-building"></i> ${lead.company}
-                                </p>
-                                <div class="d-flex justify-content-between">
-                                    <span class="badge bg-secondary">${lead.status}</span>
-                                    <button class="btn btn-success btn-sm click-to-dial" 
-                                            onclick="makeCall('${lead.phone}')">
-                                        <i class="fas fa-phone"></i> Call
-                                    </button>
+            if (data && data.length > 0) {
+                data.forEach(lead => {
+                    html += `
+                        <div class="col-md-4 mb-3">
+                            <div class="card lead-card status-${lead.status} priority-${lead.priority}">
+                                <div class="card-body">
+                                    <h5 class="card-title">${lead.first_name} ${lead.last_name}</h5>
+                                    <p class="card-text">
+                                        <i class="fas fa-phone"></i> ${lead.phone}<br>
+                                        <i class="fas fa-envelope"></i> ${lead.email}<br>
+                                        <i class="fas fa-building"></i> ${lead.company}
+                                    </p>
+                                    <div class="d-flex justify-content-between">
+                                        <span class="badge bg-secondary">${lead.status}</span>
+                                        <button class="btn btn-success btn-sm click-to-dial" 
+                                                onclick="makeCall('${lead.phone}')">
+                                            <i class="fas fa-phone"></i> Call
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                `;
-            });
+                    `;
+                });
+            } else {
+                html += '<div class="col-12"><div class="alert alert-info">No leads found</div></div>';
+            }
             
             html += '</div>';
             document.getElementById('main-content').innerHTML = html;
@@ -721,6 +723,38 @@ function loadLeads() {
             console.error('Error loading leads:', error);
             document.getElementById('main-content').innerHTML = '<div class="alert alert-danger">Error loading leads</div>';
         });
+}
+
+function loadCalls() {
+    const html = `
+        <h2>Call Center</h2>
+        <div class="alert alert-info">Call center functionality coming soon</div>
+    `;
+    document.getElementById('main-content').innerHTML = html;
+}
+
+function loadReports() {
+    const html = `
+        <h2>Reports & Analytics</h2>
+        <div class="alert alert-info">Reports functionality coming soon</div>
+    `;
+    document.getElementById('main-content').innerHTML = html;
+}
+
+function loadUsers() {
+    const html = `
+        <h2>User Management</h2>
+        <div class="alert alert-info">User management functionality coming soon</div>
+    `;
+    document.getElementById('main-content').innerHTML = html;
+}
+
+function loadSettings() {
+    const html = `
+        <h2>Settings</h2>
+        <div class="alert alert-info">Settings functionality coming soon</div>
+    `;
+    document.getElementById('main-content').innerHTML = html;
 }
 
 function makeCall(phone) {
