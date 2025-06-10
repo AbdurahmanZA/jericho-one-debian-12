@@ -412,8 +412,8 @@ const IntegrationSettings = () => {
                 </div>
                 <Switch 
                   id="auto-sync"
-                  checked={autoSync}
-                  onCheckedChange={setAutoSync}
+                  checked={config.sync.autoSync}
+                  onCheckedChange={(checked) => updateConfig('sync', 'autoSync', checked)}
                 />
               </div>
               
@@ -426,8 +426,8 @@ const IntegrationSettings = () => {
                 </div>
                 <Switch 
                   id="call-logging"
-                  checked={callLogging}
-                  onCheckedChange={setCallLogging}
+                  checked={config.sync.callLogging}
+                  onCheckedChange={(checked) => updateConfig('sync', 'callLogging', checked)}
                 />
               </div>
               
@@ -440,8 +440,8 @@ const IntegrationSettings = () => {
                 </div>
                 <Switch 
                   id="notifications"
-                  checked={notifications}
-                  onCheckedChange={setNotifications}
+                  checked={config.sync.notifications}
+                  onCheckedChange={(checked) => updateConfig('sync', 'notifications', checked)}
                 />
               </div>
               
@@ -449,7 +449,8 @@ const IntegrationSettings = () => {
                 <Label htmlFor="sync-interval">Sync Interval (minutes)</Label>
                 <Input 
                   id="sync-interval" 
-                  defaultValue="5" 
+                  value={config.sync.syncInterval}
+                  onChange={(e) => updateConfig('sync', 'syncInterval', parseInt(e.target.value) || 5)}
                   placeholder="Sync interval in minutes"
                   type="number"
                 />
@@ -466,27 +467,31 @@ const IntegrationSettings = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label htmlFor="api-key">API Key</Label>
-                <Input 
-                  id="api-key" 
-                  defaultValue="pbx_api_key_12345" 
-                  placeholder="FreePBX API key"
-                />
-              </div>
-              <div>
                 <Label htmlFor="webhook-url">Webhook URL</Label>
                 <Input 
                   id="webhook-url" 
-                  defaultValue="https://your-domain.com/webhook" 
+                  value={config.webhook.url}
+                  onChange={(e) => updateConfig('webhook', 'url', e.target.value)}
                   placeholder="Webhook endpoint"
+                />
+              </div>
+              <div>
+                <Label htmlFor="webhook-secret">Webhook Secret</Label>
+                <Input 
+                  id="webhook-secret" 
+                  type="password"
+                  value={config.webhook.secret}
+                  onChange={(e) => updateConfig('webhook', 'secret', e.target.value)}
+                  placeholder="Webhook secret key"
                 />
               </div>
               <div>
                 <Label htmlFor="encryption">Encryption Settings</Label>
                 <Textarea 
                   id="encryption" 
-                  defaultValue="SSL/TLS encryption enabled for all connections"
+                  value="SSL/TLS encryption enabled for all connections"
                   placeholder="Encryption configuration"
+                  readOnly
                 />
               </div>
             </CardContent>
