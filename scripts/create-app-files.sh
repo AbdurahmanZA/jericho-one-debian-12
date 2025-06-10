@@ -92,7 +92,7 @@ $user = getCurrentUser();
 </html>
 EOF
 
-    # Create improved login page with better debugging and reset option
+    # Create improved login page with better debugging and password reset
     cat > $CRM_PATH/login.php << 'EOF'
 <?php
 session_start();
@@ -132,41 +132,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = $_POST['username'] ?? '';
     $password = $_POST['password'] ?? '';
     
-    // Debug information
+    // Enhanced debug information
     if (isset($_GET['debug'])) {
-        $debug = "Attempting login with username: " . htmlspecialchars($username);
+        $debug = "Login attempt for username: " . htmlspecialchars($username) . "<br>";
         
         try {
             $db = getDatabase();
-            $stmt = $db->prepare("SELECT * FROM users WHERE username = ?");
+            $debug .= "Database connection: OK<br>";
+            
+            // Count total users
+            $count_stmt = $db->query("SELECT COUNT(*) as count FROM users");
+            $count = $count_stmt->fetch()['count'];
+            $debug .= "Users in database: $count<br>";
+            
+            // Get user details
+            $stmt = $db->prepare("SELECT id, username, password_hash, active FROM users WHERE username = ?");
             $stmt->execute([$username]);
             $user = $stmt->fetch();
             
             if ($user) {
-                $debug .= "<br>User found in database";
-                $debug .= "<br>User active: " . ($user['active'] ? 'Yes' : 'No');
-                $debug .= "<br>Stored password hash: " . substr($user['password_hash'], 0, 20) . "...";
-                $debug .= "<br>Password length: " . strlen($password);
+                $debug .= "User found: YES<br>";
+                $debug .= "User ID: " . $user['id'] . "<br>";
+                $debug .= "User active: " . ($user['active'] ? 'YES' : 'NO') . "<br>";
+                $debug .= "Password hash length: " . strlen($user['password_hash']) . "<br>";
+                $debug .= "Password hash starts with: " . substr($user['password_hash'], 0, 10) . "...<br>";
+                $debug .= "Input password: '" . htmlspecialchars($password) . "'<br>";
+                $debug .= "Input password length: " . strlen($password) . "<br>";
                 
-                // Test both methods
-                $bcrypt_check = password_verify($password, $user['password_hash']);
-                $plain_check = ($user['password_hash'] === $password);
-                
-                $debug .= "<br>BCrypt verification: " . ($bcrypt_check ? 'Success' : 'Failed');
-                $debug .= "<br>Plain text check: " . ($plain_check ? 'Success' : 'Failed');
-            } else {
-                $debug .= "<br>User not found in database";
-                
-                // Show all users for debugging
-                $stmt = $db->query("SELECT username, active FROM users");
-                $users = $stmt->fetchAll();
-                $debug .= "<br>Available users: ";
-                foreach ($users as $u) {
-                    $debug .= $u['username'] . " (active: " . ($u['active'] ? 'Yes' : 'No') . "), ";
+                // Test password verification
+                if (substr($user['password_hash'], 0, 4) === '$2y$') {
+                    $bcrypt_result = password_verify($password, $user['password_hash']);
+                    $debug .= "BCrypt verification: " . ($bcrypt_result ? 'SUCCESS' : 'FAILED') . "<br>";
+                } else {
+                    $plain_result = ($user['password_hash'] === $password);
+                    $debug .= "Plain text comparison: " . ($plain_result ? 'SUCCESS' : 'FAILED') . "<br>";
+                    $debug .= "Stored: '" . $user['password_hash'] . "' vs Input: '" . $password . "'<br>";
                 }
+            } else {
+                $debug .= "User found: NO<br>";
+                
+                // Show all users
+                $all_users = $db->query("SELECT username, active FROM users")->fetchAll();
+                $debug .= "Available users: ";
+                foreach ($all_users as $u) {
+                    $debug .= $u['username'] . " (active: " . ($u['active'] ? 'YES' : 'NO') . "), ";
+                }
+                $debug .= "<br>";
             }
         } catch (Exception $e) {
-            $debug .= "<br>Database error: " . $e->getMessage();
+            $debug .= "Database error: " . $e->getMessage() . "<br>";
         }
     }
     
@@ -386,7 +400,7 @@ function initiateCall($extension, $phone) {
 ?>
 EOF
 
-    # Create fixed authentication system
+    # Create robust authentication system with better password handling
     cat > $CRM_PATH/includes/auth.php << 'EOF'
 <?php
 require_once 'database.php';
@@ -418,38 +432,55 @@ function login($username, $password) {
         $stmt->execute([$username]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
         
-        if ($user) {
-            $password_valid = false;
-            
-            // Check if password starts with $2y$ (bcrypt hash)
-            if (substr($user['password_hash'], 0, 4) === '$2y$') {
-                // Standard hashed password
-                if (password_verify($password, $user['password_hash'])) {
-                    $password_valid = true;
-                }
+        if (!$user) {
+            error_log("Login failed: User '$username' not found");
+            return false;
+        }
+        
+        $password_valid = false;
+        $stored_hash = $user['password_hash'];
+        
+        // Handle different password storage formats
+        if (empty($stored_hash)) {
+            error_log("Login failed: Empty password hash for user '$username'");
+            return false;
+        }
+        
+        // Check if it's a bcrypt hash (starts with $2y$)
+        if (substr($stored_hash, 0, 4) === '$2y$') {
+            // Standard bcrypt hash
+            if (password_verify($password, $stored_hash)) {
+                $password_valid = true;
+                error_log("Login successful: BCrypt verification for user '$username'");
             } else {
-                // Plain text password (for initial setup)
-                if ($user['password_hash'] === $password) {
-                    $password_valid = true;
-                    
-                    // Hash the password for future use
-                    $hashed = password_hash($password, PASSWORD_DEFAULT);
-                    $update_stmt = $db->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
-                    $update_stmt->execute([$hashed, $user['id']]);
-                }
+                error_log("Login failed: BCrypt verification failed for user '$username'");
             }
+        } else {
+            // Plain text password (fallback for initial setup)
+            if ($stored_hash === $password) {
+                $password_valid = true;
+                error_log("Login successful: Plain text verification for user '$username'");
+                
+                // Upgrade to bcrypt hash
+                $new_hash = password_hash($password, PASSWORD_DEFAULT);
+                $update_stmt = $db->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
+                $update_stmt->execute([$new_hash, $user['id']]);
+                error_log("Password upgraded to bcrypt for user '$username'");
+            } else {
+                error_log("Login failed: Plain text verification failed for user '$username'");
+            }
+        }
+        
+        if ($password_valid) {
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['username'] = $user['username'];
+            $_SESSION['role'] = $user['role'];
             
-            if ($password_valid) {
-                $_SESSION['user_id'] = $user['id'];
-                $_SESSION['username'] = $user['username'];
-                $_SESSION['role'] = $user['role'];
-                
-                // Update last login
-                $login_stmt = $db->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
-                $login_stmt->execute([$user['id']]);
-                
-                return true;
-            }
+            // Update last login
+            $login_stmt = $db->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
+            $login_stmt->execute([$user['id']]);
+            
+            return true;
         }
         
         return false;
