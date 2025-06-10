@@ -1,4 +1,3 @@
-
 #!/bin/bash
 
 # FreePBX CRM Installation Script for Ubuntu
@@ -39,27 +38,55 @@ CRM_DB_USER="crm_user"
 CRM_DB_PASSWORD="CrmSecure2024!"
 WEB_ROOT="/var/www/html"
 CRM_PATH="$WEB_ROOT/crm"
-IP_ADDRESS=$(hostname -I | awk '{print $1}')
-UBUNTU_VERSION=$(lsb_release -rs)
+IP_ADDRESS=""
+UBUNTU_VERSION=""
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
     error "This script must be run as root. Use: sudo $0"
 fi
 
+# Get IP address
+get_ip_address() {
+    IP_ADDRESS=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "127.0.0.1")
+    if [ -z "$IP_ADDRESS" ]; then
+        IP_ADDRESS="127.0.0.1"
+    fi
+}
+
+# Install essential packages first
+install_essentials() {
+    log "Installing essential packages..."
+    apt-get update
+    apt-get install -y \
+        lsb-release \
+        curl \
+        wget \
+        gnupg2 \
+        software-properties-common \
+        apt-transport-https \
+        ca-certificates \
+        net-tools
+    log "Essential packages installed"
+}
+
 # System checks
 check_system() {
-    log "Performing system checks for Ubuntu $UBUNTU_VERSION..."
+    log "Performing system checks..."
     
-    # Check Ubuntu version
-    if ! command -v lsb_release &> /dev/null; then
-        error "lsb_release not found. Please install lsb-release package first."
+    # Get Ubuntu version
+    if command -v lsb_release >/dev/null 2>&1; then
+        UBUNTU_VERSION=$(lsb_release -rs)
+    else
+        error "lsb_release command not available"
     fi
+    
+    log "Ubuntu $UBUNTU_VERSION detected"
     
     # Verify supported Ubuntu version
     case "$UBUNTU_VERSION" in
         20.04|22.04|24.04)
-            log "Ubuntu $UBUNTU_VERSION detected - supported version"
+            log "Ubuntu $UBUNTU_VERSION - supported version"
             ;;
         *)
             warn "Ubuntu $UBUNTU_VERSION may not be fully supported. Recommended: 22.04 LTS"
@@ -74,16 +101,16 @@ check_system() {
     # Check available space (minimum 5GB)
     AVAILABLE_SPACE=$(df / | awk 'NR==2 {print $4}')
     if [ "$AVAILABLE_SPACE" -lt 5242880 ]; then
-        error "Insufficient disk space. At least 5GB required, $(($AVAILABLE_SPACE / 1024 / 1024))GB available"
+        error "Insufficient disk space. At least 5GB required, $((AVAILABLE_SPACE / 1024 / 1024))GB available"
     fi
     
     # Check memory (minimum 2GB)
     TOTAL_MEM=$(free -m | awk 'NR==2{print $2}')
     if [ "$TOTAL_MEM" -lt 2048 ]; then
-        warn "Less than 2GB RAM detected ($TOTAL_MEM MB). Performance may be affected"
+        warn "Less than 2GB RAM detected (${TOTAL_MEM}MB). Performance may be affected"
     fi
     
-    log "System checks passed - Available: ${TOTAL_MEM}MB RAM, $(($AVAILABLE_SPACE / 1024 / 1024))GB disk"
+    log "System checks passed - Available: ${TOTAL_MEM}MB RAM, $((AVAILABLE_SPACE / 1024 / 1024))GB disk"
 }
 
 # Update system and install prerequisites
@@ -92,21 +119,14 @@ install_prerequisites() {
     apt-get update
     apt-get upgrade -y
     
-    log "Installing essential packages..."
+    log "Installing prerequisite packages..."
     apt-get install -y \
-        curl \
-        wget \
-        gnupg2 \
-        software-properties-common \
-        apt-transport-https \
-        ca-certificates \
-        lsb-release \
         unzip \
         git \
-        net-tools \
         htop \
         nano \
-        vim
+        vim \
+        build-essential
     
     log "Prerequisites installed successfully"
 }
@@ -128,9 +148,9 @@ install_lamp_stack() {
     systemctl enable mysql
     
     log "Installing PHP and extensions..."
-    if [[ "$UBUNTU_VERSION" == "24.04" ]]; then
+    if [ "$UBUNTU_VERSION" = "24.04" ]; then
         PHP_VERSION="8.3"
-    elif [[ "$UBUNTU_VERSION" == "22.04" ]]; then
+    elif [ "$UBUNTU_VERSION" = "22.04" ]; then
         PHP_VERSION="8.1"
     else
         PHP_VERSION="7.4"
@@ -960,7 +980,7 @@ EOF
     log "Database initialization completed"
 }
 
-# Create status and management scripts
+# Create management scripts
 create_management_scripts() {
     log "Creating management and status scripts..."
     
@@ -1044,8 +1064,10 @@ EOF
 
 # Main installation function
 main() {
-    log "Starting FreePBX CRM installation on Ubuntu $UBUNTU_VERSION..."
+    log "Starting FreePBX CRM installation..."
     
+    get_ip_address
+    install_essentials
     check_system
     install_prerequisites
     install_lamp_stack
