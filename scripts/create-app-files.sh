@@ -90,11 +90,12 @@ $user = getCurrentUser();
 </html>
 EOF
 
-    # Create login page
+    # Create improved login page with better debugging
     cat > $CRM_PATH/login.php << 'EOF'
 <?php
 session_start();
 require_once 'includes/auth.php';
+require_once 'includes/database.php';
 
 if (isLoggedIn()) {
     header('Location: index.php');
@@ -102,9 +103,33 @@ if (isLoggedIn()) {
 }
 
 $error = '';
+$debug = '';
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = $_POST['username'] ?? '';
     $password = $_POST['password'] ?? '';
+    
+    // Debug information
+    if (isset($_GET['debug'])) {
+        $debug = "Attempting login with username: " . htmlspecialchars($username);
+        
+        try {
+            $db = getDatabase();
+            $stmt = $db->prepare("SELECT * FROM users WHERE username = ?");
+            $stmt->execute([$username]);
+            $user = $stmt->fetch();
+            
+            if ($user) {
+                $debug .= "<br>User found in database";
+                $debug .= "<br>User active: " . ($user['active'] ? 'Yes' : 'No');
+                $debug .= "<br>Password check: " . (password_verify($password, $user['password_hash']) ? 'Success' : 'Failed');
+            } else {
+                $debug .= "<br>User not found in database";
+            }
+        } catch (Exception $e) {
+            $debug .= "<br>Database error: " . $e->getMessage();
+        }
+    }
     
     if (login($username, $password)) {
         header('Location: index.php');
@@ -134,10 +159,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <?php if ($error): ?>
                             <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
                         <?php endif; ?>
+                        
+                        <?php if ($debug): ?>
+                            <div class="alert alert-info">
+                                <strong>Debug Info:</strong><br>
+                                <?= $debug ?>
+                            </div>
+                        <?php endif; ?>
+                        
                         <form method="POST">
                             <div class="mb-3">
                                 <label for="username" class="form-label">Username</label>
-                                <input type="text" class="form-control" id="username" name="username" required>
+                                <input type="text" class="form-control" id="username" name="username" value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" required>
                             </div>
                             <div class="mb-3">
                                 <label for="password" class="form-label">Password</label>
@@ -147,7 +180,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </form>
                         <div class="mt-3 text-center">
                             <small class="text-muted">
-                                Default login: admin / admin123
+                                Default login: admin / admin123<br>
+                                <a href="?debug=1" class="text-decoration-none">Enable Debug Mode</a>
                             </small>
                         </div>
                     </div>
@@ -172,6 +206,8 @@ EOF
 }
 
 create_api_files() {
+    # ... keep existing code (click_to_dial.php and leads.php remain the same)
+    
     # Create Click-to-Dial API
     cat > $CRM_PATH/api/click_to_dial.php << 'EOF'
 <?php
@@ -240,6 +276,8 @@ EOF
 }
 
 create_includes_files() {
+    # ... keep existing code (asterisk.php remains the same)
+    
     # Create Asterisk AMI interface
     cat > $CRM_PATH/includes/asterisk.php << 'EOF'
 <?php
@@ -302,13 +340,13 @@ function initiateCall($extension, $phone) {
 ?>
 EOF
 
-    # Create authentication system
+    # Create improved authentication system
     cat > $CRM_PATH/includes/auth.php << 'EOF'
 <?php
 require_once 'database.php';
 
 function isLoggedIn() {
-    return isset($_SESSION['user_id']);
+    return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
 }
 
 function getCurrentUser() {
@@ -316,51 +354,130 @@ function getCurrentUser() {
         return null;
     }
     
-    $db = getDatabase();
-    $stmt = $db->prepare("SELECT * FROM users WHERE id = ? AND active = 1");
-    $stmt->execute([$_SESSION['user_id']]);
-    return $stmt->fetch();
+    try {
+        $db = getDatabase();
+        $stmt = $db->prepare("SELECT * FROM users WHERE id = ? AND active = 1");
+        $stmt->execute([$_SESSION['user_id']]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        error_log("Error getting current user: " . $e->getMessage());
+        return null;
+    }
 }
 
 function login($username, $password) {
-    $db = getDatabase();
-    $stmt = $db->prepare("SELECT * FROM users WHERE username = ? AND active = 1");
-    $stmt->execute([$username]);
-    $user = $stmt->fetch();
-    
-    if ($user && password_verify($password, $user['password_hash'])) {
-        $_SESSION['user_id'] = $user['id'];
-        return true;
+    try {
+        $db = getDatabase();
+        $stmt = $db->prepare("SELECT * FROM users WHERE username = ? AND active = 1");
+        $stmt->execute([$username]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($user) {
+            // Check if password is hashed or plain text (for initial setup)
+            $password_valid = false;
+            
+            if (password_verify($password, $user['password_hash'])) {
+                // Standard hashed password
+                $password_valid = true;
+            } elseif ($user['password_hash'] === $password) {
+                // Plain text password (for initial setup)
+                $password_valid = true;
+                
+                // Hash the password for future use
+                $hashed = password_hash($password, PASSWORD_DEFAULT);
+                $update_stmt = $db->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
+                $update_stmt->execute([$hashed, $user['id']]);
+            }
+            
+            if ($password_valid) {
+                $_SESSION['user_id'] = $user['id'];
+                $_SESSION['username'] = $user['username'];
+                $_SESSION['role'] = $user['role'];
+                
+                // Update last login
+                $login_stmt = $db->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
+                $login_stmt->execute([$user['id']]);
+                
+                return true;
+            }
+        }
+        
+        return false;
+    } catch (Exception $e) {
+        error_log("Login error: " . $e->getMessage());
+        return false;
     }
-    
-    return false;
 }
 
 function logout() {
+    session_unset();
     session_destroy();
+}
+
+function requireRole($required_role) {
+    $user = getCurrentUser();
+    if (!$user) {
+        header('Location: login.php');
+        exit;
+    }
+    
+    $roles = ['agent' => 1, 'manager' => 2, 'administrator' => 3];
+    $user_level = $roles[$user['role']] ?? 0;
+    $required_level = $roles[$required_role] ?? 999;
+    
+    if ($user_level < $required_level) {
+        header('HTTP/1.1 403 Forbidden');
+        echo "Access denied. Required role: $required_role";
+        exit;
+    }
 }
 ?>
 EOF
 
-    # Create database connection
+    # Create improved database connection
     cat > $CRM_PATH/includes/database.php << 'EOF'
 <?php
 function getDatabase() {
     static $pdo = null;
     
     if ($pdo === null) {
-        $config = require '../config/database.php';
-        $dsn = "mysql:host={$config['host']};dbname={$config['database']};charset={$config['charset']}";
-        $pdo = new PDO($dsn, $config['username'], $config['password'], $config['options']);
+        try {
+            $config = require __DIR__ . '/../config/database.php';
+            $dsn = "mysql:host={$config['host']};dbname={$config['database']};charset={$config['charset']}";
+            
+            $options = [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ];
+            
+            $pdo = new PDO($dsn, $config['username'], $config['password'], $options);
+        } catch (PDOException $e) {
+            error_log("Database connection failed: " . $e->getMessage());
+            throw new Exception("Database connection failed");
+        }
     }
     
     return $pdo;
+}
+
+function testDatabaseConnection() {
+    try {
+        $db = getDatabase();
+        $stmt = $db->query("SELECT 1");
+        return true;
+    } catch (Exception $e) {
+        error_log("Database test failed: " . $e->getMessage());
+        return false;
+    }
 }
 ?>
 EOF
 }
 
 create_asset_files() {
+    # ... keep existing code (style.css and app.js remain the same)
+    
     # Create CSS file
     cat > $CRM_PATH/assets/style.css << 'EOF'
 .sidebar {
