@@ -1,8 +1,36 @@
-
 #!/bin/bash
 
 # FreePBX CRM Integration - Complete Installation Script for Debian 12
 # This script installs and configures the complete CRM system with FreePBX integration
+# 
+# DEPENDENCIES REQUIRED BEFORE RUNNING:
+# ====================================
+# System Requirements:
+# - Debian 12 (Bookworm) - Fresh installation recommended
+# - Root access (sudo privileges)
+# - Minimum 2GB RAM, 20GB disk space
+# - Internet connection for package downloads
+# 
+# Pre-installation Dependencies:
+# - curl (for downloading packages)
+# - wget (for file downloads) 
+# - gnupg2 (for package verification)
+# - software-properties-common (for repository management)
+# - apt-transport-https (for secure package downloads)
+# - ca-certificates (for SSL certificate verification)
+# 
+# Install pre-dependencies with:
+# sudo apt-get update
+# sudo apt-get install -y curl wget gnupg2 software-properties-common apt-transport-https ca-certificates
+#
+# Network Requirements:
+# - Port 80 (HTTP) - Web interface
+# - Port 443 (HTTPS) - Secure web interface  
+# - Port 5060 (UDP) - SIP signaling
+# - Port 5038 (TCP) - Asterisk Manager Interface
+# - Ports 10000-20000 (UDP) - RTP media streams
+# - Port 22 (TCP) - SSH access
+# - Port 3306 (TCP) - MySQL (localhost only)
 
 set -e
 
@@ -36,6 +64,45 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
+# Pre-installation dependency check
+log "Checking pre-installation dependencies..."
+
+REQUIRED_DEPS=("curl" "wget" "gnupg2" "apt-transport-https" "ca-certificates")
+MISSING_DEPS=()
+
+for dep in "${REQUIRED_DEPS[@]}"; do
+    if ! command -v "$dep" &> /dev/null && ! dpkg -l | grep -q "^ii  $dep "; then
+        MISSING_DEPS+=("$dep")
+    fi
+done
+
+if [ ${#MISSING_DEPS[@]} -ne 0 ]; then
+    warning "Missing required dependencies: ${MISSING_DEPS[*]}"
+    log "Installing missing dependencies..."
+    apt-get update
+    apt-get install -y "${MISSING_DEPS[@]}"
+fi
+
+# System requirements check
+log "Checking system requirements..."
+
+# Check available memory (minimum 2GB)
+TOTAL_MEM=$(free -m | awk 'NR==2{printf "%.0f", $2}')
+if [ "$TOTAL_MEM" -lt 2048 ]; then
+    warning "System has less than 2GB RAM ($TOTAL_MEM MB). Performance may be affected."
+fi
+
+# Check available disk space (minimum 20GB)
+AVAILABLE_SPACE=$(df / | awk 'NR==2 {printf "%.0f", $4/1024/1024}')
+if [ "$AVAILABLE_SPACE" -lt 20 ]; then
+    warning "Less than 20GB disk space available (${AVAILABLE_SPACE}GB). Installation may fail."
+fi
+
+# Check Debian version
+if ! grep -q "bookworm\|12" /etc/os-release; then
+    warning "This script is designed for Debian 12 (Bookworm). Current system may not be compatible."
+fi
+
 # Get system information
 HOSTNAME=$(hostname -f)
 IP_ADDRESS=$(hostname -I | awk '{print $1}')
@@ -43,6 +110,8 @@ IP_ADDRESS=$(hostname -I | awk '{print $1}')
 log "Starting FreePBX CRM Integration installation on Debian 12"
 log "Hostname: $HOSTNAME"
 log "IP Address: $IP_ADDRESS"
+log "Available RAM: ${TOTAL_MEM}MB"
+log "Available Disk: ${AVAILABLE_SPACE}GB"
 
 # Configuration variables
 MYSQL_ROOT_PASSWORD="FreePBX2024!"
@@ -53,20 +122,108 @@ ASTERISK_USER="asterisk"
 WEB_ROOT="/var/www/html"
 CRM_PATH="$WEB_ROOT/crm"
 
+# Delete existing CRM folder if it exists
+if [ -d "$CRM_PATH" ]; then
+    warning "Existing CRM folder found at $CRM_PATH - removing it..."
+    rm -rf "$CRM_PATH"
+    log "Existing CRM folder removed successfully"
+fi
+
 # Update system
 log "Updating system packages..."
 apt-get update && apt-get upgrade -y
 
-# Install required packages
-log "Installing system dependencies..."
-apt-get install -y \
-    wget curl gnupg2 software-properties-common \
-    build-essential git unzip \
-    apache2 mysql-server php php-mysql php-cli php-curl php-xml php-zip php-gd php-mbstring \
-    nodejs npm \
-    asterisk asterisk-modules asterisk-config \
-    fail2ban ufw \
-    certbot python3-certbot-apache
+# Install main application dependencies
+log "Installing main application dependencies..."
+
+# Web server and database dependencies
+WEB_DEPS=(
+    "apache2"                    # Web server
+    "mysql-server"              # Database server
+    "mysql-client"              # Database client
+)
+
+# PHP and extensions
+PHP_DEPS=(
+    "php"                       # PHP runtime
+    "php-mysql"                 # MySQL PHP extension
+    "php-cli"                   # PHP command line interface
+    "php-curl"                  # cURL extension for HTTP requests
+    "php-xml"                   # XML processing extension
+    "php-zip"                   # ZIP archive extension
+    "php-gd"                    # Graphics extension
+    "php-mbstring"              # Multibyte string extension
+    "php-json"                  # JSON extension
+    "php-intl"                  # Internationalization extension
+    "libapache2-mod-php"        # Apache PHP module
+)
+
+# Development and build tools
+BUILD_DEPS=(
+    "build-essential"           # Essential build tools
+    "git"                       # Version control
+    "unzip"                     # Archive extraction
+    "zip"                       # Archive creation
+    "nodejs"                    # Node.js runtime
+    "npm"                       # Node package manager
+)
+
+# Asterisk and telephony
+ASTERISK_DEPS=(
+    "asterisk"                  # Asterisk PBX
+    "asterisk-modules"          # Additional Asterisk modules
+    "asterisk-config"           # Asterisk configuration files
+    "asterisk-core-sounds-en"   # English sound files
+    "asterisk-core-sounds-en-wav" # WAV format sound files
+)
+
+# Security and monitoring
+SECURITY_DEPS=(
+    "fail2ban"                  # Intrusion prevention
+    "ufw"                       # Uncomplicated firewall
+    "iptables"                  # Firewall rules
+    "rsyslog"                   # System logging
+)
+
+# SSL/TLS support
+SSL_DEPS=(
+    "certbot"                   # Let's Encrypt client
+    "python3-certbot-apache"    # Apache plugin for certbot
+    "openssl"                   # SSL/TLS toolkit
+)
+
+# System utilities
+SYSTEM_DEPS=(
+    "cron"                      # Task scheduler
+    "logrotate"                 # Log rotation
+    "htop"                      # Process monitor
+    "nano"                      # Text editor
+    "vim"                       # Advanced text editor
+    "net-tools"                 # Network utilities
+    "dnsutils"                  # DNS utilities
+)
+
+# Install all dependencies in groups
+log "Installing web server and database dependencies..."
+apt-get install -y "${WEB_DEPS[@]}"
+
+log "Installing PHP and extensions..."
+apt-get install -y "${PHP_DEPS[@]}"
+
+log "Installing build and development tools..."
+apt-get install -y "${BUILD_DEPS[@]}"
+
+log "Installing Asterisk and telephony components..."
+apt-get install -y "${ASTERISK_DEPS[@]}"
+
+log "Installing security and monitoring tools..."
+apt-get install -y "${SECURITY_DEPS[@]}"
+
+log "Installing SSL/TLS support..."
+apt-get install -y "${SSL_DEPS[@]}"
+
+log "Installing system utilities..."
+apt-get install -y "${SYSTEM_DEPS[@]}"
 
 # Configure MySQL
 log "Configuring MySQL..."
@@ -83,8 +240,10 @@ mysql -u root -p$MYSQL_ROOT_PASSWORD -e "FLUSH PRIVILEGES;"
 
 # Create CRM database and user
 log "Creating CRM database..."
-mysql -u root -p$MYSQL_ROOT_PASSWORD -e "CREATE DATABASE IF NOT EXISTS $CRM_DB_NAME CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-mysql -u root -p$MYSQL_ROOT_PASSWORD -e "CREATE USER IF NOT EXISTS '$CRM_DB_USER'@'localhost' IDENTIFIED BY '$CRM_DB_PASSWORD';"
+mysql -u root -p$MYSQL_ROOT_PASSWORD -e "DROP DATABASE IF EXISTS $CRM_DB_NAME;"
+mysql -u root -p$MYSQL_ROOT_PASSWORD -e "CREATE DATABASE $CRM_DB_NAME CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -u root -p$MYSQL_ROOT_PASSWORD -e "DROP USER IF EXISTS '$CRM_DB_USER'@'localhost';"
+mysql -u root -p$MYSQL_ROOT_PASSWORD -e "CREATE USER '$CRM_DB_USER'@'localhost' IDENTIFIED BY '$CRM_DB_PASSWORD';"
 mysql -u root -p$MYSQL_ROOT_PASSWORD -e "GRANT ALL PRIVILEGES ON $CRM_DB_NAME.* TO '$CRM_DB_USER'@'localhost';"
 mysql -u root -p$MYSQL_ROOT_PASSWORD -e "FLUSH PRIVILEGES;"
 
@@ -93,32 +252,50 @@ log "Configuring PHP..."
 PHP_VERSION=$(php -v | head -n1 | cut -d' ' -f2 | cut -d'.' -f1,2)
 PHP_INI="/etc/php/$PHP_VERSION/apache2/php.ini"
 
+# Backup original PHP configuration
+cp $PHP_INI $PHP_INI.backup
+
+# Configure PHP settings for CRM
 sed -i 's/upload_max_filesize = .*/upload_max_filesize = 100M/' $PHP_INI
 sed -i 's/post_max_size = .*/post_max_size = 100M/' $PHP_INI
 sed -i 's/max_execution_time = .*/max_execution_time = 300/' $PHP_INI
 sed -i 's/memory_limit = .*/memory_limit = 512M/' $PHP_INI
+sed -i 's/max_input_vars = .*/max_input_vars = 3000/' $PHP_INI
+sed -i 's/;date.timezone.*/date.timezone = "UTC"/' $PHP_INI
 
 # Configure Apache
 log "Configuring Apache..."
-a2enmod rewrite ssl headers
+a2enmod rewrite ssl headers expires deflate
 systemctl start apache2
 systemctl enable apache2
 
-# Create Apache virtual host for CRM
+# Create Apache virtual host for CRM with /crm path
 cat > /etc/apache2/sites-available/freepbx-crm.conf << EOF
 <VirtualHost *:80>
-    ServerName $HOSTNAME
+    ServerName $IP_ADDRESS
     DocumentRoot $WEB_ROOT
     
     <Directory $WEB_ROOT>
         AllowOverride All
         Require all granted
+        DirectoryIndex index.php index.html
+        Options -Indexes +FollowSymLinks
     </Directory>
     
     <Directory $CRM_PATH>
         AllowOverride All
         Require all granted
+        DirectoryIndex index.php
+        Options -Indexes +FollowSymLinks
     </Directory>
+    
+    # Security headers
+    Header always set X-Content-Type-Options nosniff
+    Header always set X-Frame-Options DENY
+    Header always set X-XSS-Protection "1; mode=block"
+    
+    # Redirect root to CRM for convenience
+    RedirectMatch ^/$ /crm/
     
     ErrorLog \${APACHE_LOG_DIR}/crm_error.log
     CustomLog \${APACHE_LOG_DIR}/crm_access.log combined
@@ -132,8 +309,13 @@ a2dissite 000-default.conf
 log "Configuring Asterisk..."
 systemctl stop asterisk
 
-# Add asterisk user to audio group
-usermod -a -G audio $ASTERISK_USER
+# Add asterisk user to required groups
+usermod -a -G audio,dialout $ASTERISK_USER
+
+# Backup original Asterisk configuration
+cp /etc/asterisk/manager.conf /etc/asterisk/manager.conf.backup 2>/dev/null || true
+cp /etc/asterisk/extensions.conf /etc/asterisk/extensions.conf.backup 2>/dev/null || true
+cp /etc/asterisk/sip.conf /etc/asterisk/sip.conf.backup 2>/dev/null || true
 
 # Configure Asterisk Manager Interface (AMI)
 cat > /etc/asterisk/manager.conf << EOF
@@ -141,6 +323,7 @@ cat > /etc/asterisk/manager.conf << EOF
 enabled = yes
 port = 5038
 bindaddr = 127.0.0.1
+displayconnects = no
 
 [crmuser]
 secret = CRM_AMI_Secret2024!
@@ -195,8 +378,8 @@ systemctl start asterisk
 systemctl enable asterisk
 
 # Create CRM application structure
-log "Setting up CRM application..."
-mkdir -p $CRM_PATH/{api,assets,config,includes,uploads,recordings}
+log "Setting up CRM application structure at $CRM_PATH..."
+mkdir -p $CRM_PATH/{api,assets,config,includes,uploads,recordings,logs,backup}
 
 # Create database schema
 cat > $CRM_PATH/schema.sql << EOF
@@ -818,55 +1001,153 @@ exit;
 EOF
 
 # Set proper permissions
+log "Setting proper file permissions..."
+
+# Set ownership to web server user
 chown -R www-data:www-data $WEB_ROOT
-chmod -R 755 $WEB_ROOT
+chown -R www-data:www-data $CRM_PATH
+
+# Set base permissions
+find $CRM_PATH -type d -exec chmod 755 {} \;
+find $CRM_PATH -type f -exec chmod 644 {} \;
+
+# Set write permissions for specific directories
 chmod -R 777 $CRM_PATH/uploads
 chmod -R 777 $CRM_PATH/recordings
+chmod -R 777 $CRM_PATH/logs
+chmod -R 777 $CRM_PATH/backup
 
-# Configure firewall
+# Set read-only for configuration files
+chmod 644 $CRM_PATH/config/*.php
+
+# Configure firewall with all required ports
 log "Configuring firewall..."
-ufw allow 22/tcp
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw allow 5060/udp  # SIP
-ufw allow 10000:20000/udp  # RTP
+ufw --force reset
+ufw default deny incoming
+ufw default allow outgoing
+
+# Essential services
+ufw allow 22/tcp comment 'SSH'
+ufw allow 80/tcp comment 'HTTP'
+ufw allow 443/tcp comment 'HTTPS'
+
+# Asterisk/FreePBX ports
+ufw allow 5060/udp comment 'SIP signaling'
+ufw allow 5038/tcp comment 'Asterisk Manager Interface'
+ufw allow 10000:20000/udp comment 'RTP media streams'
+
+# Database (localhost only)
+ufw allow from 127.0.0.1 to any port 3306 comment 'MySQL localhost'
+
 ufw --force enable
 
 # Configure fail2ban
 log "Configuring fail2ban..."
+cat > /etc/fail2ban/jail.local << EOF
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 5
+
+[sshd]
+enabled = true
+
+[apache-auth]
+enabled = true
+
+[apache-badbots]
+enabled = true
+
+[asterisk]
+enabled = true
+port = 5060
+logpath = /var/log/asterisk/security
+EOF
+
 systemctl start fail2ban
 systemctl enable fail2ban
 
-# Restart services
+# Restart all services
 log "Restarting services..."
 systemctl restart apache2
 systemctl restart mysql
 systemctl restart asterisk
 
-# Create status check script
+# Create enhanced status check script
 cat > /usr/local/bin/freepbx-crm-status << EOF
 #!/bin/bash
 echo "FreePBX CRM System Status"
 echo "========================"
-echo "Apache: \$(systemctl is-active apache2)"
-echo "MySQL: \$(systemctl is-active mysql)"
-echo "Asterisk: \$(systemctl is-active asterisk)"
+echo "Services:"
+echo "  Apache: \$(systemctl is-active apache2)"
+echo "  MySQL: \$(systemctl is-active mysql)"
+echo "  Asterisk: \$(systemctl is-active asterisk)"
+echo "  Fail2ban: \$(systemctl is-active fail2ban)"
 echo ""
-echo "Web Interface: http://$IP_ADDRESS/crm/"
-echo "Default Login: admin / admin123"
+echo "Network:"
+echo "  IP Address: $IP_ADDRESS"
+echo "  Web Interface: http://$IP_ADDRESS/crm/"
 echo ""
-echo "AMI Status:"
-asterisk -rx "manager show connected" 2>/dev/null || echo "AMI not connected"
+echo "Database:"
+echo "  Status: \$(systemctl is-active mysql)"
+echo "  CRM Database: $CRM_DB_NAME"
+echo ""
+echo "Firewall:"
+ufw status numbered
+echo ""
+echo "Disk Usage:"
+df -h $CRM_PATH
+echo ""
+echo "Memory Usage:"
+free -h
 EOF
 
 chmod +x /usr/local/bin/freepbx-crm-status
 
+# Create installation summary
+log "Creating installation summary..."
+cat > $CRM_PATH/INSTALLATION_INFO.txt << EOF
+FreePBX CRM Installation Summary
+===============================
+Installation Date: $(date)
+System: $(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2)
+IP Address: $IP_ADDRESS
+Hostname: $HOSTNAME
+
+Installed Dependencies:
+- Web Server: Apache $(apache2 -v | head -n1 | cut -d' ' -f3)
+- Database: MySQL $(mysql --version | cut -d' ' -f3)
+- PHP: $(php -v | head -n1 | cut -d' ' -f2)
+- Asterisk: $(asterisk -V | cut -d' ' -f2)
+- Node.js: $(node --version)
+- NPM: $(npm --version)
+
+Access Information:
+- Web Interface: http://$IP_ADDRESS/crm/
+- Default Username: admin
+- Default Password: admin123
+
+Security Features:
+- Firewall: UFW enabled
+- Intrusion Prevention: Fail2ban active
+- SSL Ready: Certbot installed
+
+Next Steps:
+1. Access the web interface
+2. Change default passwords
+3. Configure SIP extensions
+4. Test click-to-dial functionality
+5. Configure SSL certificate for production
+
+For system status: freepbx-crm-status
+EOF
+
 # Final system status
 log "Installation completed successfully!"
 echo ""
-echo "=================================================="
+echo "================================================================"
 echo "FreePBX CRM Integration - Installation Complete"
-echo "=================================================="
+echo "================================================================"
 echo ""
 echo "System Information:"
 echo "  Hostname: $HOSTNAME"
@@ -877,27 +1158,25 @@ echo "Default Credentials:"
 echo "  Username: admin"
 echo "  Password: admin123"
 echo ""
-echo "Database Information:"
-echo "  Database: $CRM_DB_NAME"
-echo "  Username: $CRM_DB_USER"
-echo "  Password: $CRM_DB_PASSWORD"
+echo "Installed Components:"
+echo "  ✓ Apache Web Server"
+echo "  ✓ MySQL Database Server"
+echo "  ✓ PHP $(php -v | head -n1 | cut -d' ' -f2)"
+echo "  ✓ Asterisk PBX"
+echo "  ✓ FreePBX CRM Application"
+echo "  ✓ Security (UFW + Fail2ban)"
 echo ""
-echo "Asterisk AMI:"
-echo "  Username: crmuser"
-echo "  Password: CRM_AMI_Secret2024!"
-echo "  Port: 5038"
-echo ""
-echo "Important Notes:"
-echo "  - Change default passwords immediately"
-echo "  - Configure SSL certificate for production"
-echo "  - Configure SIP extensions in /etc/asterisk/sip.conf"
-echo "  - Test AMI connection and click-to-dial functionality"
+echo "Important Security Notes:"
+echo "  - Change ALL default passwords immediately"
+echo "  - Configure SSL certificate for production use"
+echo "  - Review firewall rules for your environment"
+echo "  - Configure regular database backups"
 echo ""
 echo "Status Check Command: freepbx-crm-status"
-echo "=================================================="
+echo "Installation Details: $CRM_PATH/INSTALLATION_INFO.txt"
+echo "================================================================"
 
 # Create installation log
-echo "Installation completed at $(date)" > /var/log/freepbx-crm-install.log
-echo "System: Debian 12" >> /var/log/freepbx-crm-install.log
-echo "IP: $IP_ADDRESS" >> /var/log/freepbx-crm-install.log
-echo "Hostname: $HOSTNAME" >> /var/log/freepbx-crm-install.log
+echo "Installation completed successfully at $(date)" > /var/log/freepbx-crm-install.log
+echo "All dependencies installed and configured" >> /var/log/freepbx-crm-install.log
+echo "System ready for production use" >> /var/log/freepbx-crm-install.log
