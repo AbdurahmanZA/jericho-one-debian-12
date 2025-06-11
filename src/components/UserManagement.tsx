@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -8,56 +8,48 @@ import UserStats from "./user-management/UserStats";
 import UserFilters from "./user-management/UserFilters";
 import AddUserForm from "./user-management/AddUserForm";
 import UserCard from "./user-management/UserCard";
+import DeleteUserDialog from "./user-management/DeleteUserDialog";
+import PasswordResetDialog from "./user-management/PasswordResetDialog";
+import { userService, User, CreateUserData } from "@/services/userService";
 
 const UserManagement = () => {
   const { toast } = useToast();
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean; user: User | null }>({
+    isOpen: false,
+    user: null
+  });
+  const [passwordDialog, setPasswordDialog] = useState<{ isOpen: boolean; user: User | null }>({
+    isOpen: false,
+    user: null
+  });
 
-  const users = [
-    {
-      id: 1,
-      name: "Admin User",
-      email: "admin@company.com",
-      role: "Administrator",
-      extension: "1000",
-      status: "active",
-      lastActive: "Today",
-      permissions: ["manage_users", "system_admin", "view_reports"]
-    },
-    {
-      id: 2,
-      name: "John Manager",
-      email: "john@company.com",
-      role: "Manager",
-      extension: "1001",
-      status: "active",
-      lastActive: "2 hours ago",
-      permissions: ["view_reports", "edit_leads", "make_calls"]
-    },
-    {
-      id: 3,
-      name: "Sarah Agent",
-      email: "sarah@company.com",
-      role: "Agent",
-      extension: "1002",
-      status: "active",
-      lastActive: "5 minutes ago",
-      permissions: ["view_leads", "make_calls"]
-    },
-    {
-      id: 4,
-      name: "Mike Agent",
-      email: "mike@company.com",
-      role: "Agent",
-      extension: "1003",
-      status: "inactive",
-      lastActive: "Yesterday",
-      permissions: ["view_leads", "make_calls"]
+  // Load users on component mount
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const loadUsers = async () => {
+    try {
+      setLoading(true);
+      const userData = await userService.getAllUsers();
+      setUsers(userData);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to load users",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
 
   const filteredUsers = users.filter(user => {
     const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -68,48 +60,130 @@ const UserManagement = () => {
     return matchesSearch && matchesRole && matchesStatus;
   });
 
-  const handleAddUser = () => {
-    toast({
-      title: "User Created",
-      description: "New user has been successfully added to the system.",
-    });
-    setShowAddForm(false);
+  const handleAddUser = async (userData: CreateUserData) => {
+    try {
+      await userService.createUser(userData);
+      await loadUsers();
+      toast({
+        title: "Success",
+        description: "User created successfully",
+      });
+      setShowAddForm(false);
+      setEditingUser(null);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to create user",
+        variant: "destructive"
+      });
+    }
   };
 
-  const handleEditUser = (user: any) => {
+  const handleEditUser = (user: User) => {
+    setEditingUser(user);
+    setShowAddForm(true);
+  };
+
+  const handleUpdateUser = async (userData: CreateUserData) => {
+    if (!editingUser) return;
+    
+    try {
+      await userService.updateUser(editingUser.id, userData);
+      await loadUsers();
+      toast({
+        title: "Success",
+        description: "User updated successfully",
+      });
+      setShowAddForm(false);
+      setEditingUser(null);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update user",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deleteDialog.user) return;
+    
+    try {
+      await userService.deleteUser(deleteDialog.user.id);
+      await loadUsers();
+      toast({
+        title: "Success",
+        description: "User deleted successfully",
+      });
+      setDeleteDialog({ isOpen: false, user: null });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete user",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleResetPassword = async (newPassword: string) => {
+    if (!passwordDialog.user) return;
+    
+    try {
+      await userService.resetPassword(passwordDialog.user.id, newPassword);
+      toast({
+        title: "Success",
+        description: "Password reset successfully",
+      });
+      setPasswordDialog({ isOpen: false, user: null });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to reset password",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const exportUsers = () => {
+    const csvContent = [
+      ['Name', 'Email', 'Role', 'Extension', 'Status', 'Last Active'].join(','),
+      ...filteredUsers.map(user => 
+        [user.name, user.email, user.role, user.extension, user.status, user.lastActive].join(',')
+      )
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'users.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
+
     toast({
-      title: "Edit User",
-      description: `Editing user: ${user.name}`,
+      title: "Success",
+      description: "Users exported successfully",
     });
   };
 
-  const handleDeleteUser = (userId: number) => {
-    toast({
-      title: "User Deleted",
-      description: "User has been removed from the system.",
-      variant: "destructive"
-    });
+  const stats = {
+    totalUsers: users.length,
+    activeUsers: users.filter(u => u.status === 'active').length,
+    administrators: users.filter(u => u.role === 'Administrator').length,
+    agents: users.filter(u => u.role === 'Agent').length
   };
 
-  const handleResetPassword = (userId: number) => {
-    toast({
-      title: "Password Reset",
-      description: "Password reset email has been sent to the user.",
-    });
-  };
-
-  const totalUsers = users.length;
-  const activeUsers = users.filter(u => u.status === 'active').length;
-  const administrators = users.filter(u => u.role === 'Administrator').length;
-  const agents = users.filter(u => u.role === 'Agent').length;
+  if (loading) {
+    return <div className="flex justify-center p-8">Loading users...</div>;
+  }
 
   return (
     <div className="space-y-6">
       <UserStats 
-        totalUsers={totalUsers}
-        activeUsers={activeUsers}
-        administrators={administrators}
-        agents={agents}
+        totalUsers={stats.totalUsers}
+        activeUsers={stats.activeUsers}
+        administrators={stats.administrators}
+        agents={stats.agents}
       />
 
       <Card>
@@ -121,13 +195,20 @@ const UserManagement = () => {
             </CardTitle>
             <div className="flex gap-2">
               <Button 
-                onClick={() => setShowAddForm(!showAddForm)}
+                onClick={() => {
+                  setEditingUser(null);
+                  setShowAddForm(!showAddForm);
+                }}
                 className="flex items-center gap-2"
               >
                 <Plus className="h-4 w-4" />
                 Add User
               </Button>
-              <Button variant="outline" className="flex items-center gap-2">
+              <Button 
+                variant="outline" 
+                className="flex items-center gap-2"
+                onClick={exportUsers}
+              >
                 <Download className="h-4 w-4" />
                 Export
               </Button>
@@ -147,25 +228,58 @@ const UserManagement = () => {
           {showAddForm && (
             <div className="mb-6">
               <AddUserForm 
-                onSave={handleAddUser}
-                onCancel={() => setShowAddForm(false)}
+                onSave={editingUser ? handleUpdateUser : handleAddUser}
+                onCancel={() => {
+                  setShowAddForm(false);
+                  setEditingUser(null);
+                }}
+                editingUser={editingUser}
               />
             </div>
           )}
 
           <div className="space-y-4">
-            {filteredUsers.map((user) => (
-              <UserCard
-                key={user.id}
-                user={user}
-                onEdit={handleEditUser}
-                onDelete={handleDeleteUser}
-                onResetPassword={handleResetPassword}
-              />
-            ))}
+            {filteredUsers.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                {searchTerm || roleFilter !== "all" || statusFilter !== "all" 
+                  ? "No users match your filters" 
+                  : "No users found"
+                }
+              </div>
+            ) : (
+              filteredUsers.map((user) => (
+                <UserCard
+                  key={user.id}
+                  user={user}
+                  onEdit={handleEditUser}
+                  onDelete={(userId) => {
+                    const user = users.find(u => u.id === userId);
+                    if (user) setDeleteDialog({ isOpen: true, user });
+                  }}
+                  onResetPassword={(userId) => {
+                    const user = users.find(u => u.id === userId);
+                    if (user) setPasswordDialog({ isOpen: true, user });
+                  }}
+                />
+              ))
+            )}
           </div>
         </CardContent>
       </Card>
+
+      <DeleteUserDialog
+        isOpen={deleteDialog.isOpen}
+        onOpenChange={(open) => setDeleteDialog({ isOpen: open, user: null })}
+        onConfirm={handleDeleteUser}
+        userName={deleteDialog.user?.name || ""}
+      />
+
+      <PasswordResetDialog
+        isOpen={passwordDialog.isOpen}
+        onOpenChange={(open) => setPasswordDialog({ isOpen: open, user: null })}
+        onConfirm={handleResetPassword}
+        userName={passwordDialog.user?.name || ""}
+      />
     </div>
   );
 };
