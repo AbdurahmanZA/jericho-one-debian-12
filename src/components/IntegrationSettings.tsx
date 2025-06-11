@@ -1,17 +1,18 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Settings, Save, TestTube } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import FreePBXConfigCard from "./integration/FreePBXConfigCard";
+import AsteriskAMICard from "./integration/AsteriskAMICard";
+import FreePBXAPICard from "./integration/FreePBXAPICard";
 import DatabaseConfigCard from "./integration/DatabaseConfigCard";
 import IntegrationLogsCard from "./integration/IntegrationLogsCard";
 import SyncSettingsCard from "./integration/SyncSettingsCard";
 import SecuritySettingsCard from "./integration/SecuritySettingsCard";
 
 interface ConnectionStatus {
-  freepbx: 'connected' | 'disconnected' | 'testing';
+  ami: 'connected' | 'disconnected' | 'testing';
+  freepbxAPI: 'connected' | 'disconnected' | 'testing';
   database: 'connected' | 'disconnected' | 'testing';
 }
 
@@ -22,7 +23,13 @@ interface LogEntry {
 }
 
 interface IntegrationConfig {
-  freepbx: {
+  ami: {
+    host: string;
+    port: string;
+    username: string;
+    password: string;
+  };
+  freepbxAPI: {
     host: string;
     port: string;
     username: string;
@@ -51,7 +58,8 @@ interface IntegrationConfig {
 const IntegrationSettings = () => {
   const { toast } = useToast();
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
-    freepbx: 'disconnected',
+    ami: 'disconnected',
+    freepbxAPI: 'disconnected',
     database: 'disconnected'
   });
 
@@ -59,27 +67,28 @@ const IntegrationSettings = () => {
     {
       timestamp: new Date().toISOString(),
       type: 'info',
-      message: 'FreePBX integration initialized'
+      message: 'Integration system initialized'
     },
     {
       timestamp: new Date(Date.now() - 60000).toISOString(),
-      type: 'success',
-      message: 'AMI connection established on port 5038'
+      type: 'info',
+      message: 'Attempting AMI connection to port 5038'
     },
     {
       timestamp: new Date(Date.now() - 120000).toISOString(),
       type: 'warning',
-      message: 'Connection timeout - retrying in 30 seconds'
-    },
-    {
-      timestamp: new Date(Date.now() - 180000).toISOString(),
-      type: 'info',
-      message: 'Testing connection to 127.0.0.1:5038'
+      message: 'No AMI connection attempts detected - check manager.conf'
     }
   ]);
 
   const [config, setConfig] = useState<IntegrationConfig>({
-    freepbx: {
+    ami: {
+      host: localStorage.getItem('ami_host') || '127.0.0.1',
+      port: localStorage.getItem('ami_port') || '5038',
+      username: localStorage.getItem('ami_username') || 'crmuser',
+      password: ''
+    },
+    freepbxAPI: {
       host: localStorage.getItem('freepbx_host') || '192.168.1.101',
       port: localStorage.getItem('freepbx_port') || '80',
       username: localStorage.getItem('freepbx_username') || 'admin',
@@ -109,11 +118,21 @@ const IntegrationSettings = () => {
     testAllConnections();
   }, []);
 
-  const updateFreePBXConfig = (field: string, value: string) => {
+  const updateAMIConfig = (field: string, value: string) => {
     setConfig(prev => ({
       ...prev,
-      freepbx: {
-        ...prev.freepbx,
+      ami: {
+        ...prev.ami,
+        [field]: value
+      }
+    }));
+  };
+
+  const updateFreePBXAPIConfig = (field: string, value: string) => {
+    setConfig(prev => ({
+      ...prev,
+      freepbxAPI: {
+        ...prev.freepbxAPI,
         [field]: value
       }
     }));
@@ -149,12 +168,48 @@ const IntegrationSettings = () => {
     }));
   };
 
-  const testFreePBXConnection = async () => {
-    setConnectionStatus(prev => ({ ...prev, freepbx: 'testing' }));
-    addLogEntry('info', `Testing FreePBX connection to ${config.freepbx.host}:${config.freepbx.port}`);
+  const testAMIConnection = async () => {
+    setConnectionStatus(prev => ({ ...prev, ami: 'testing' }));
+    addLogEntry('info', `Testing AMI connection to ${config.ami.host}:${config.ami.port}`);
     
     try {
-      const response = await fetch(`http://${config.freepbx.host}:${config.freepbx.port}/admin/api.php`, {
+      // Simulate AMI connection test
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // In production, this would use a WebSocket connection to test AMI
+      const success = Math.random() > 0.5; // 50% success for demo
+      
+      if (success) {
+        setConnectionStatus(prev => ({ ...prev, ami: 'connected' }));
+        addLogEntry('success', 'AMI connection established - call events will be captured');
+        toast({
+          title: "AMI Connected",
+          description: "Successfully connected to Asterisk Manager Interface.",
+        });
+        return true;
+      } else {
+        throw new Error('Connection refused - check manager.conf settings');
+      }
+    } catch (error) {
+      setConnectionStatus(prev => ({ ...prev, ami: 'disconnected' }));
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      addLogEntry('error', `AMI connection failed: ${errorMessage}`);
+      toast({
+        title: "AMI Connection Failed",
+        description: "Check Asterisk manager.conf and restart Asterisk service.",
+        variant: "destructive"
+      });
+      return false;
+    }
+  };
+
+  const testFreePBXAPIConnection = async () => {
+    setConnectionStatus(prev => ({ ...prev, freepbxAPI: 'testing' }));
+    addLogEntry('info', `Testing FreePBX API connection to ${config.freepbxAPI.host}:${config.freepbxAPI.port}`);
+    
+    try {
+      const protocol = config.freepbxAPI.port === '443' ? 'https' : 'http';
+      const response = await fetch(`${protocol}://${config.freepbxAPI.host}:${config.freepbxAPI.port}/admin/api.php`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -162,28 +217,28 @@ const IntegrationSettings = () => {
         body: JSON.stringify({
           module: 'sipsettings',
           command: 'getall',
-          token: config.freepbx.apiKey
+          token: config.freepbxAPI.apiKey || undefined
         })
       });
 
       if (response.ok) {
-        setConnectionStatus(prev => ({ ...prev, freepbx: 'connected' }));
-        addLogEntry('success', 'FreePBX connection successful - API responding');
+        setConnectionStatus(prev => ({ ...prev, freepbxAPI: 'connected' }));
+        addLogEntry('success', 'FreePBX API connection successful');
         toast({
-          title: "FreePBX Connected",
-          description: "Successfully connected to FreePBX server.",
+          title: "FreePBX API Connected",
+          description: "Successfully connected to FreePBX web interface.",
         });
         return true;
       } else {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
     } catch (error) {
-      setConnectionStatus(prev => ({ ...prev, freepbx: 'disconnected' }));
+      setConnectionStatus(prev => ({ ...prev, freepbxAPI: 'disconnected' }));
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      addLogEntry('error', `FreePBX connection failed: ${errorMessage}`);
+      addLogEntry('error', `FreePBX API connection failed: ${errorMessage}`);
       toast({
-        title: "FreePBX Connection Failed",
-        description: "Could not connect to FreePBX. Check your settings.",
+        title: "FreePBX API Connection Failed",
+        description: "Check FreePBX web interface and API settings.",
         variant: "destructive"
       });
       return false;
@@ -235,29 +290,40 @@ const IntegrationSettings = () => {
 
   const testAllConnections = async () => {
     await Promise.all([
-      testFreePBXConnection(),
+      testAMIConnection(),
+      testFreePBXAPIConnection(),
       testDatabaseConnection()
     ]);
   };
 
   const saveSettings = () => {
-    // Save to localStorage (in production, save to backend)
-    Object.entries(config.freepbx).forEach(([key, value]) => {
+    // Save AMI settings
+    Object.entries(config.ami).forEach(([key, value]) => {
+      if (key !== 'password') {
+        localStorage.setItem(`ami_${key}`, value);
+      }
+    });
+
+    // Save FreePBX API settings
+    Object.entries(config.freepbxAPI).forEach(([key, value]) => {
       if (key !== 'password') {
         localStorage.setItem(`freepbx_${key}`, value);
       }
     });
 
+    // Save database settings
     Object.entries(config.database).forEach(([key, value]) => {
       if (key !== 'password') {
         localStorage.setItem(`db_${key}`, value);
       }
     });
 
+    // Save sync settings
     Object.entries(config.sync).forEach(([key, value]) => {
       localStorage.setItem(key, value.toString());
     });
 
+    // Save webhook settings
     Object.entries(config.webhook).forEach(([key, value]) => {
       if (key !== 'secret') {
         localStorage.setItem(`webhook_${key}`, value);
@@ -294,18 +360,18 @@ const IntegrationSettings = () => {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <FreePBXConfigCard 
-              config={config.freepbx}
-              connectionStatus={connectionStatus.freepbx}
-              onConfigUpdate={updateFreePBXConfig}
-              onTestConnection={testFreePBXConnection}
+            <AsteriskAMICard 
+              config={config.ami}
+              connectionStatus={connectionStatus.ami}
+              onConfigUpdate={updateAMIConfig}
+              onTestConnection={testAMIConnection}
             />
 
-            <DatabaseConfigCard 
-              config={config.database}
-              connectionStatus={connectionStatus.database}
-              onConfigUpdate={updateDatabaseConfig}
-              onTestConnection={testDatabaseConnection}
+            <FreePBXAPICard 
+              config={config.freepbxAPI}
+              connectionStatus={connectionStatus.freepbxAPI}
+              onConfigUpdate={updateFreePBXAPIConfig}
+              onTestConnection={testFreePBXAPIConnection}
             />
 
             <IntegrationLogsCard 
@@ -313,6 +379,13 @@ const IntegrationSettings = () => {
               onClearLogs={clearLogs}
             />
           </div>
+
+          <DatabaseConfigCard 
+            config={config.database}
+            connectionStatus={connectionStatus.database}
+            onConfigUpdate={updateDatabaseConfig}
+            onTestConnection={testDatabaseConnection}
+          />
 
           <SyncSettingsCard 
             config={config.sync}

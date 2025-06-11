@@ -4,27 +4,27 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Phone, TestTube, CheckCircle, AlertTriangle, RefreshCw } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Phone, TestTube, CheckCircle, AlertTriangle, RefreshCw, Info } from "lucide-react";
 
-interface FreePBXConfigCardProps {
+interface AsteriskAMICardProps {
   config: {
     host: string;
     port: string;
     username: string;
     password: string;
-    apiKey: string;
   };
   connectionStatus: 'connected' | 'disconnected' | 'testing';
   onConfigUpdate: (field: string, value: string) => void;
   onTestConnection: () => void;
 }
 
-const FreePBXConfigCard = ({ 
+const AsteriskAMICard = ({ 
   config, 
   connectionStatus, 
   onConfigUpdate, 
   onTestConnection 
-}: FreePBXConfigCardProps) => {
+}: AsteriskAMICardProps) => {
   const getStatusBadge = (status: 'connected' | 'disconnected' | 'testing') => {
     switch (status) {
       case 'connected':
@@ -56,58 +56,69 @@ const FreePBXConfigCard = ({
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
           <Phone className="h-4 w-4" />
-          FreePBX Configuration
+          Asterisk AMI Connection
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertDescription>
+            AMI (Asterisk Manager Interface) provides real-time call events and control. 
+            Configure in /etc/asterisk/manager.conf on your PBX server.
+          </AlertDescription>
+        </Alert>
+        
         <div>
-          <Label htmlFor="pbx-host">FreePBX Host</Label>
+          <Label htmlFor="ami-host">Asterisk Server IP</Label>
           <Input 
-            id="pbx-host" 
+            id="ami-host" 
             value={config.host}
             onChange={(e) => onConfigUpdate('host', e.target.value)}
-            placeholder="IP or hostname"
+            placeholder="192.168.1.100"
           />
         </div>
         <div>
-          <Label htmlFor="pbx-port">Port</Label>
+          <Label htmlFor="ami-port">AMI Port</Label>
           <Input 
-            id="pbx-port" 
+            id="ami-port" 
             value={config.port}
             onChange={(e) => onConfigUpdate('port', e.target.value)}
-            placeholder="Port number"
+            placeholder="5038"
           />
         </div>
         <div>
-          <Label htmlFor="pbx-username">Username</Label>
+          <Label htmlFor="ami-username">AMI Username</Label>
           <Input 
-            id="pbx-username" 
+            id="ami-username" 
             value={config.username}
             onChange={(e) => onConfigUpdate('username', e.target.value)}
-            placeholder="FreePBX username"
+            placeholder="crmuser"
           />
         </div>
         <div>
-          <Label htmlFor="pbx-password">Password</Label>
+          <Label htmlFor="ami-password">AMI Secret</Label>
           <Input 
-            id="pbx-password" 
+            id="ami-password" 
             type="password" 
             value={config.password}
             onChange={(e) => onConfigUpdate('password', e.target.value)}
-            placeholder="FreePBX password"
+            placeholder="Your AMI secret"
           />
         </div>
-        <div>
-          <Label htmlFor="pbx-api-key">API Key</Label>
-          <Input 
-            id="pbx-api-key" 
-            value={config.apiKey}
-            onChange={(e) => onConfigUpdate('apiKey', e.target.value)}
-            placeholder="FreePBX API key"
-          />
+        
+        <div className="bg-gray-50 p-3 rounded-md text-sm">
+          <p className="font-medium mb-2">Manager.conf example:</p>
+          <pre className="text-xs">
+{`[crmuser]
+secret = YourSecretHere
+permit = 127.0.0.1/255.255.255.255
+read = all
+write = all`}
+          </pre>
         </div>
+        
         <div className="flex items-center justify-between">
-          <span className="text-sm">Connection Status</span>
+          <span className="text-sm">AMI Status</span>
           {getStatusBadge(connectionStatus)}
         </div>
         <Button 
@@ -117,11 +128,11 @@ const FreePBXConfigCard = ({
           className="w-full"
         >
           <TestTube className="h-4 w-4 mr-2" />
-          Test FreePBX Connection
+          Test AMI Connection
         </Button>
       </CardContent>
     </Card>
   );
 };
 
-export default FreePBXConfigCard;
+export default AsteriskAMICard;
