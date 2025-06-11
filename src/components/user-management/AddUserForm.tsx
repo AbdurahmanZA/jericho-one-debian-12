@@ -10,6 +10,7 @@ import { UserPlus } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import { CreateUserData } from "@/services/userService";
 
 const formSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -18,14 +19,14 @@ const formSchema = z.object({
   role: z.enum(["agent", "manager", "administrator"]),
   password: z.string().min(6, "Password must be at least 6 characters"),
   confirmPassword: z.string(),
-  permissions: z.array(z.string()).default([])
+  permissions: z.array(z.string())
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
 });
 
 interface AddUserFormProps {
-  onSave: (userData: z.infer<typeof formSchema>) => void;
+  onSave: (userData: CreateUserData) => void;
   onCancel: () => void;
   editingUser?: any;
 }
@@ -54,7 +55,16 @@ const AddUserForm = ({ onSave, onCancel, editingUser }: AddUserFormProps) => {
   });
 
   const onSubmit = (values: z.infer<typeof formSchema>) => {
-    onSave(values);
+    // Transform the form data to match CreateUserData interface
+    const userData: CreateUserData = {
+      name: values.name,
+      email: values.email,
+      extension: values.extension,
+      role: values.role,
+      password: values.password,
+      permissions: values.permissions
+    };
+    onSave(userData);
     form.reset();
   };
 
