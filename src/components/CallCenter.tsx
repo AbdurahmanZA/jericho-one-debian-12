@@ -20,6 +20,17 @@ interface ActiveCall {
   leadId?: string;
 }
 
+interface CallHistoryEntry {
+  id: number;
+  leadName: string;
+  phone: string;
+  duration: string;
+  outcome: string;
+  timestamp: string;
+  hasRecording: boolean;
+  notes: string;
+}
+
 const CallCenter = ({ userRole }: CallCenterProps) => {
   const { toast } = useToast();
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
@@ -28,6 +39,28 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [extension, setExtension] = useState(localStorage.getItem('user_extension') || '');
+  const [callHistory, setCallHistory] = useState<CallHistoryEntry[]>([
+    {
+      id: 1,
+      leadName: "Sarah Johnson",
+      phone: "+1-555-0456",
+      duration: "00:05:32",
+      outcome: "Callback Scheduled",
+      timestamp: "10:30 AM",
+      hasRecording: true,
+      notes: "Interested in premium package, callback scheduled for tomorrow"
+    },
+    {
+      id: 2,
+      leadName: "Mike Davis",
+      phone: "+1-555-0789",
+      duration: "00:03:45",
+      outcome: "Not Interested",
+      timestamp: "10:15 AM",
+      hasRecording: true,
+      notes: "Currently satisfied with existing solution"
+    }
+  ]);
 
   // Real-time call timer
   useEffect(() => {
@@ -49,43 +82,50 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
   const handleCallInitiated = (callData: ActiveCall) => {
     setActiveCall(callData);
     
-    // Simulate call connection after 3 seconds
+    // Simulate call connection after 2-4 seconds (random for realism)
+    const connectionDelay = Math.random() * 2000 + 2000;
     setTimeout(() => {
-      setActiveCall(prev => prev ? { ...prev, status: 'connected', startTime: new Date() } : null);
+      setActiveCall(prev => {
+        if (prev && prev.id === callData.id) {
+          return { ...prev, status: 'connected', startTime: new Date() };
+        }
+        return prev;
+      });
       toast({
         title: "Call Connected",
-        description: "Call is now active",
+        description: `Connected to ${callData.leadName}`,
       });
-    }, 3000);
+    }, connectionDelay);
   };
 
   const endCall = async () => {
     if (!activeCall) return;
 
     try {
-      // Call FreePBX API to end call
-      await fetch('/api/hangup-call', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          callId: activeCall.id,
-          extension: extension
-        })
-      });
-
       toast({
         title: "Call Ended",
         description: `Call with ${activeCall.leadName} has ended. Duration: ${activeCall.duration}`,
       });
 
-      // Log call to database
-      await logCall(activeCall);
+      // Add call to history
+      const newHistoryEntry: CallHistoryEntry = {
+        id: Date.now(),
+        leadName: activeCall.leadName,
+        phone: activeCall.phone,
+        duration: activeCall.duration,
+        outcome: callOutcome || 'Call Completed',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        hasRecording: isRecording,
+        notes: callNotes || 'No notes added'
+      };
+
+      setCallHistory(prev => [newHistoryEntry, ...prev]);
       
       setActiveCall(null);
       setIsRecording(false);
       setIsMuted(false);
+      setCallNotes('');
+      setCallOutcome('');
     } catch (error) {
       toast({
         title: "Error",
@@ -122,28 +162,6 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
     }
   };
 
-  const logCall = async (call: ActiveCall) => {
-    try {
-      await fetch('/api/log-call', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          leadPhone: call.phone,
-          duration: call.duration,
-          outcome: callOutcome,
-          notes: callNotes,
-          agentExtension: extension,
-          startTime: call.startTime,
-          endTime: new Date()
-        })
-      });
-    } catch (error) {
-      console.error('Failed to log call:', error);
-    }
-  };
-
   const saveCallNotes = async () => {
     if (!callNotes.trim() || !callOutcome) {
       toast({
@@ -155,25 +173,12 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
     }
 
     try {
-      await fetch('/api/save-call-notes', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          outcome: callOutcome,
-          notes: callNotes,
-          agentExtension: extension
-        })
-      });
-
       toast({
         title: "Call Notes Saved",
         description: "Call outcome and notes have been recorded.",
       });
       
-      setCallNotes("");
-      setCallOutcome("");
+      // Notes are saved but not cleared - they'll be used when call ends
     } catch (error) {
       toast({
         title: "Error",
@@ -182,39 +187,6 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
       });
     }
   };
-
-  const recentCalls = [
-    {
-      id: 1,
-      leadName: "Sarah Johnson",
-      phone: "+1-555-0456",
-      duration: "00:05:32",
-      outcome: "Callback Scheduled",
-      timestamp: "10:30 AM",
-      hasRecording: true,
-      notes: "Interested in premium package, callback scheduled for tomorrow"
-    },
-    {
-      id: 2,
-      leadName: "Mike Davis",
-      phone: "+1-555-0789",
-      duration: "00:03:45",
-      outcome: "Not Interested",
-      timestamp: "10:15 AM",
-      hasRecording: true,
-      notes: "Currently satisfied with existing solution"
-    },
-    {
-      id: 3,
-      leadName: "Lisa Wilson",
-      phone: "+1-555-0321",
-      duration: "00:08:12",
-      outcome: "Qualified",
-      timestamp: "09:45 AM",
-      hasRecording: true,
-      notes: "Very interested, requesting proposal and demo"
-    }
-  ];
 
   return (
     <div className="space-y-6">
@@ -243,7 +215,7 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
         onSaveNotes={saveCallNotes}
       />
 
-      <CallHistory calls={recentCalls} />
+      <CallHistory calls={callHistory} />
     </div>
   );
 };

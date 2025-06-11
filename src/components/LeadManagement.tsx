@@ -17,7 +17,8 @@ import {
   PhoneCall,
   MessageSquare,
   Calendar,
-  AlertCircle
+  AlertCircle,
+  Edit
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -25,12 +26,25 @@ interface LeadManagementProps {
   userRole: string;
 }
 
+interface Lead {
+  id: number;
+  name: string;
+  company: string;
+  phone: string;
+  email: string;
+  status: string;
+  priority: string;
+  source: string;
+  assignedAgent: string;
+  lastContact: string;
+  notes: string;
+}
+
 const LeadManagement = ({ userRole }: LeadManagementProps) => {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedLeads, setSelectedLeads] = useState<number[]>([]);
-
-  const leads = [
+  const [leads, setLeads] = useState<Lead[]>([
     {
       id: 1,
       name: "John Smith",
@@ -69,15 +83,65 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
       assignedAgent: "Sarah Wilson",
       lastContact: "2024-06-08",
       notes: "Ready to move forward, send proposal"
+    },
+    {
+      id: 4,
+      name: "Emily Brown",
+      company: "Innovation Labs",
+      phone: "+1-555-0321",
+      email: "emily@innovlabs.com",
+      status: "new",
+      priority: "medium",
+      source: "LinkedIn",
+      assignedAgent: "John Doe",
+      lastContact: "Never",
+      notes: "Inquiry about custom development"
+    },
+    {
+      id: 5,
+      name: "Robert Wilson",
+      company: "Digital Agency",
+      phone: "+1-555-0654",
+      email: "robert@digitalagency.com",
+      status: "follow-up",
+      priority: "low",
+      source: "Trade Show",
+      assignedAgent: "Sarah Wilson",
+      lastContact: "2024-06-10",
+      notes: "Needs budget approval from management"
     }
-  ];
+  ]);
 
-  const handleClickToDial = (phone: string, leadName: string) => {
+  const handleClickToDial = (phone: string, leadName: string, leadId: number) => {
+    // Update lead status to show they've been contacted
+    setLeads(prevLeads => 
+      prevLeads.map(lead => 
+        lead.id === leadId 
+          ? { ...lead, status: 'contacted', lastContact: new Date().toISOString().split('T')[0] }
+          : lead
+      )
+    );
+
     toast({
-      title: "Initiating Call",
-      description: `Connecting to ${leadName} at ${phone}...`,
+      title: "Call Initiated",
+      description: `Initiating call to ${leadName} at ${phone}. Switch to Call Center tab to manage the call.`,
     });
-    // Here would be the FreePBX AMI integration
+
+    // In a real application, this would trigger the call center module
+    console.log('Initiating call:', { phone, leadName, leadId });
+  };
+
+  const handleUpdateLeadStatus = (leadId: number, newStatus: string) => {
+    setLeads(prevLeads =>
+      prevLeads.map(lead =>
+        lead.id === leadId ? { ...lead, status: newStatus } : lead
+      )
+    );
+    
+    toast({
+      title: "Lead Updated",
+      description: `Lead status updated to ${newStatus}`,
+    });
   };
 
   const handleBulkAssign = () => {
@@ -96,11 +160,34 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
     setSelectedLeads([]);
   };
 
+  const addNewLead = () => {
+    const newLead: Lead = {
+      id: Math.max(...leads.map(l => l.id)) + 1,
+      name: "New Lead",
+      company: "Company Name",
+      phone: "+1-555-0000",
+      email: "new@lead.com",
+      status: "new",
+      priority: "medium",
+      source: "Manual Entry",
+      assignedAgent: "Current User",
+      lastContact: "Never",
+      notes: "New lead - needs qualification"
+    };
+
+    setLeads(prev => [newLead, ...prev]);
+    toast({
+      title: "New Lead Added",
+      description: "Lead added successfully. You can edit the details.",
+    });
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "new": return "bg-blue-100 text-blue-800";
       case "contacted": return "bg-yellow-100 text-yellow-800";
       case "qualified": return "bg-green-100 text-green-800";
+      case "follow-up": return "bg-orange-100 text-orange-800";
       case "converted": return "bg-purple-100 text-purple-800";
       default: return "bg-gray-100 text-gray-800";
     }
@@ -132,11 +219,15 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
               <Badge variant="outline">{filteredLeads.length} leads</Badge>
             </CardTitle>
             <div className="flex gap-2">
+              <Button onClick={addNewLead} className="flex items-center gap-2">
+                <Plus className="h-4 w-4" />
+                Add Lead
+              </Button>
               {(userRole === "manager" || userRole === "administrator") && (
                 <>
                   <Button variant="outline" className="flex items-center gap-2">
                     <Upload className="h-4 w-4" />
-                    Import Leads
+                    Import
                   </Button>
                   <Button variant="outline" onClick={handleBulkAssign} className="flex items-center gap-2">
                     <Users className="h-4 w-4" />
@@ -225,11 +316,20 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
                     <div className="flex items-center gap-2">
                       <Button 
                         size="sm" 
-                        onClick={() => handleClickToDial(lead.phone, lead.name)}
+                        onClick={() => handleClickToDial(lead.phone, lead.name, lead.id)}
                         className="bg-green-600 hover:bg-green-700 flex items-center gap-1"
                       >
                         <PhoneCall className="h-3 w-3" />
                         Call
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={() => handleUpdateLeadStatus(lead.id, 'qualified')}
+                        className="flex items-center gap-1"
+                      >
+                        <Edit className="h-3 w-3" />
+                        Qualify
                       </Button>
                       <Button size="sm" variant="outline" className="flex items-center gap-1">
                         <MessageSquare className="h-3 w-3" />
