@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,6 +6,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { 
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { 
   Settings, 
   Database, 
@@ -17,13 +21,23 @@ import {
   AlertTriangle,
   Save,
   TestTube,
-  RefreshCw
+  RefreshCw,
+  ChevronDown,
+  FileText,
+  Clock,
+  Info
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface ConnectionStatus {
   freepbx: 'connected' | 'disconnected' | 'testing';
   database: 'connected' | 'disconnected' | 'testing';
+}
+
+interface LogEntry {
+  timestamp: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  message: string;
 }
 
 interface IntegrationConfig {
@@ -59,6 +73,31 @@ const IntegrationSettings = () => {
     freepbx: 'disconnected',
     database: 'disconnected'
   });
+
+  const [isLogsOpen, setIsLogsOpen] = useState(false);
+
+  const [integrationLogs, setIntegrationLogs] = useState<LogEntry[]>([
+    {
+      timestamp: new Date().toISOString(),
+      type: 'info',
+      message: 'FreePBX integration initialized'
+    },
+    {
+      timestamp: new Date(Date.now() - 60000).toISOString(),
+      type: 'success',
+      message: 'AMI connection established on port 5038'
+    },
+    {
+      timestamp: new Date(Date.now() - 120000).toISOString(),
+      type: 'warning',
+      message: 'Connection timeout - retrying in 30 seconds'
+    },
+    {
+      timestamp: new Date(Date.now() - 180000).toISOString(),
+      type: 'info',
+      message: 'Testing connection to 127.0.0.1:5038'
+    }
+  ]);
 
   const [config, setConfig] = useState<IntegrationConfig>({
     freepbx: {
@@ -104,6 +143,7 @@ const IntegrationSettings = () => {
 
   const testFreePBXConnection = async () => {
     setConnectionStatus(prev => ({ ...prev, freepbx: 'testing' }));
+    addLogEntry('info', `Testing FreePBX connection to ${config.freepbx.host}:${config.freepbx.port}`);
     
     try {
       // Simulate API call to FreePBX
@@ -121,16 +161,19 @@ const IntegrationSettings = () => {
 
       if (response.ok) {
         setConnectionStatus(prev => ({ ...prev, freepbx: 'connected' }));
+        addLogEntry('success', 'FreePBX connection successful - API responding');
         toast({
           title: "FreePBX Connected",
           description: "Successfully connected to FreePBX server.",
         });
         return true;
       } else {
-        throw new Error('Connection failed');
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
     } catch (error) {
       setConnectionStatus(prev => ({ ...prev, freepbx: 'disconnected' }));
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      addLogEntry('error', `FreePBX connection failed: ${errorMessage}`);
       toast({
         title: "FreePBX Connection Failed",
         description: "Could not connect to FreePBX. Check your settings.",
@@ -142,6 +185,7 @@ const IntegrationSettings = () => {
 
   const testDatabaseConnection = async () => {
     setConnectionStatus(prev => ({ ...prev, database: 'testing' }));
+    addLogEntry('info', `Testing database connection to ${config.database.host}:${config.database.port}`);
     
     try {
       // In production, this would call your backend API to test DB connection
@@ -161,16 +205,19 @@ const IntegrationSettings = () => {
 
       if (response.ok) {
         setConnectionStatus(prev => ({ ...prev, database: 'connected' }));
+        addLogEntry('success', 'Database connection successful');
         toast({
           title: "Database Connected",
           description: "Successfully connected to CRM database.",
         });
         return true;
       } else {
-        throw new Error('Database connection failed');
+        throw new Error(`HTTP ${response.status}: Database connection failed`);
       }
     } catch (error) {
       setConnectionStatus(prev => ({ ...prev, database: 'disconnected' }));
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      addLogEntry('error', `Database connection failed: ${errorMessage}`);
       toast({
         title: "Database Connection Failed",
         description: "Could not connect to database. Check your settings.",
@@ -217,6 +264,15 @@ const IntegrationSettings = () => {
     });
   };
 
+  const addLogEntry = (type: LogEntry['type'], message: string) => {
+    const newLog: LogEntry = {
+      timestamp: new Date().toISOString(),
+      type,
+      message
+    };
+    setIntegrationLogs(prev => [newLog, ...prev.slice(0, 49)]); // Keep last 50 logs
+  };
+
   const getStatusBadge = (status: 'connected' | 'disconnected' | 'testing') => {
     switch (status) {
       case 'connected':
@@ -243,6 +299,23 @@ const IntegrationSettings = () => {
     }
   };
 
+  const getLogIcon = (type: LogEntry['type']) => {
+    switch (type) {
+      case 'success':
+        return <CheckCircle className="h-3 w-3 text-green-600" />;
+      case 'warning':
+        return <AlertTriangle className="h-3 w-3 text-yellow-600" />;
+      case 'error':
+        return <AlertTriangle className="h-3 w-3 text-red-600" />;
+      default:
+        return <Info className="h-3 w-3 text-blue-600" />;
+    }
+  };
+
+  const formatTimestamp = (timestamp: string) => {
+    return new Date(timestamp).toLocaleTimeString();
+  };
+
   return (
     <div className="space-y-6">
       <Card>
@@ -253,8 +326,8 @@ const IntegrationSettings = () => {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <Card className="lg:col-span-1">
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Phone className="h-4 w-4" />
@@ -324,7 +397,7 @@ const IntegrationSettings = () => {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="lg:col-span-1">
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Database className="h-4 w-4" />
@@ -391,6 +464,57 @@ const IntegrationSettings = () => {
                   <TestTube className="h-4 w-4 mr-2" />
                   Test Database Connection
                 </Button>
+              </CardContent>
+            </Card>
+
+            <Card className="lg:col-span-1">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  Integration Logs
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Collapsible open={isLogsOpen} onOpenChange={setIsLogsOpen}>
+                  <CollapsibleTrigger asChild>
+                    <Button variant="ghost" className="w-full justify-between p-0 h-auto">
+                      <span className="text-sm text-muted-foreground">
+                        {integrationLogs.length} log entries
+                      </span>
+                      <ChevronDown className={`h-4 w-4 transition-transform ${isLogsOpen ? 'rotate-180' : ''}`} />
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="mt-4">
+                    <div className="max-h-80 overflow-y-auto space-y-2">
+                      {integrationLogs.map((log, index) => (
+                        <div key={index} className="flex items-start gap-2 p-2 rounded-md bg-muted/50 text-xs">
+                          {getLogIcon(log.type)}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Clock className="h-3 w-3 text-muted-foreground" />
+                              <span className="text-muted-foreground">
+                                {formatTimestamp(log.timestamp)}
+                              </span>
+                            </div>
+                            <p className="text-foreground break-words">
+                              {log.message}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 pt-4 border-t">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => setIntegrationLogs([])}
+                        className="w-full"
+                      >
+                        Clear Logs
+                      </Button>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
               </CardContent>
             </Card>
           </div>
@@ -518,3 +642,5 @@ const IntegrationSettings = () => {
 };
 
 export default IntegrationSettings;
+
+</edits_to_apply>
