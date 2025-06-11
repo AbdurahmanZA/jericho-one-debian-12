@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -127,11 +126,22 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
       description: `Initiating call to ${leadName} at ${phone}. Switch to Call Center tab to manage the call.`,
     });
 
+    // Send Discord notification
+    if ((window as any).sendDiscordNotification) {
+      (window as any).sendDiscordNotification(
+        leadName, 
+        'called', 
+        `Call initiated to ${phone}`
+      );
+    }
+
     // In a real application, this would trigger the call center module
     console.log('Initiating call:', { phone, leadName, leadId });
   };
 
   const handleUpdateLeadStatus = (leadId: number, newStatus: string) => {
+    const lead = leads.find(l => l.id === leadId);
+    
     setLeads(prevLeads =>
       prevLeads.map(lead =>
         lead.id === leadId ? { ...lead, status: newStatus } : lead
@@ -142,6 +152,15 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
       title: "Lead Updated",
       description: `Lead status updated to ${newStatus}`,
     });
+
+    // Send Discord notification
+    if (lead && (window as any).sendDiscordNotification) {
+      (window as any).sendDiscordNotification(
+        lead.name, 
+        'updated', 
+        `Status changed to ${newStatus}`
+      );
+    }
   };
 
   const handleBulkAssign = () => {

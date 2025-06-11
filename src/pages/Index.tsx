@@ -18,7 +18,8 @@ import {
   UserCheck,
   BarChart3,
   Clock,
-  Shield
+  Shield,
+  MessageCircle
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import SystemStatus from "@/components/SystemStatus";
@@ -27,6 +28,7 @@ import CallCenter from "@/components/CallCenter";
 import IntegrationSettings from "@/components/IntegrationSettings";
 import ReportsAnalytics from "@/components/ReportsAnalytics";
 import UserManagement from "@/components/UserManagement";
+import DiscordIntegration from "@/components/DiscordIntegration";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("leads");
@@ -35,7 +37,8 @@ const Index = () => {
   const getRoleBasedTabs = () => {
     const baseTabs = [
       { id: "leads", label: "Lead Management", icon: Users },
-      { id: "calls", label: "Call Center", icon: Phone }
+      { id: "calls", label: "Call Center", icon: Phone },
+      { id: "discord", label: "Discord", icon: MessageCircle }
     ];
 
     if (userRole === "manager" || userRole === "administrator") {
@@ -115,6 +118,10 @@ const Index = () => {
 
           <TabsContent value="calls">
             <CallCenter userRole={userRole} />
+          </TabsContent>
+
+          <TabsContent value="discord">
+            <DiscordIntegration userRole={userRole} />
           </TabsContent>
 
           {(userRole === "manager" || userRole === "administrator") && (
