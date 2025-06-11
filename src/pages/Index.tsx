@@ -20,6 +20,7 @@ import {
   Clock,
   Shield
 } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import SystemStatus from "@/components/SystemStatus";
 import LeadManagement from "@/components/LeadManagement";
 import CallCenter from "@/components/CallCenter";
@@ -57,7 +58,7 @@ const Index = () => {
   const roleBasedTabs = getRoleBasedTabs();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8 flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -74,6 +75,7 @@ const Index = () => {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <ThemeToggle />
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-muted-foreground">Role:</span>
               <Select value={userRole} onValueChange={setUserRole}>
