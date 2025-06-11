@@ -349,6 +349,18 @@ const IntegrationSettings = () => {
     setIntegrationLogs([]);
   };
 
+  const handleAMIConnectionStatusChange = (status: 'connected' | 'disconnected' | 'testing') => {
+    setConnectionStatus(prev => ({ ...prev, ami: status }));
+    
+    if (status === 'connected') {
+      addLogEntry('success', 'Real-time AMI connection established - call events active');
+    } else if (status === 'disconnected') {
+      addLogEntry('warning', 'AMI connection lost - call events unavailable');
+    } else {
+      addLogEntry('info', 'Testing AMI connection...');
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card>
@@ -365,6 +377,7 @@ const IntegrationSettings = () => {
               connectionStatus={connectionStatus.ami}
               onConfigUpdate={updateAMIConfig}
               onTestConnection={testAMIConnection}
+              onConnectionStatusChange={handleAMIConnectionStatusChange}
             />
 
             <FreePBXAPICard 
