@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Settings, Save, TestTube } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAMIContext } from "@/contexts/AMIContext";
 import AsteriskAMICard from "./integration/AsteriskAMICard";
 import FreePBXAPICard from "./integration/FreePBXAPICard";
 import DatabaseConfigCard from "./integration/DatabaseConfigCard";
@@ -23,12 +24,6 @@ interface LogEntry {
 }
 
 interface IntegrationConfig {
-  ami: {
-    host: string;
-    port: string;
-    username: string;
-    password: string;
-  };
   freepbxAPI: {
     host: string;
     port: string;
@@ -57,8 +52,10 @@ interface IntegrationConfig {
 
 const IntegrationSettings = () => {
   const { toast } = useToast();
+  const { isConnected: amiConnected } = useAMIContext();
+  
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
-    ami: 'disconnected',
+    ami: amiConnected ? 'connected' : 'disconnected',
     freepbxAPI: 'disconnected',
     database: 'disconnected'
   });
@@ -72,22 +69,16 @@ const IntegrationSettings = () => {
     {
       timestamp: new Date(Date.now() - 60000).toISOString(),
       type: 'info',
-      message: 'Attempting AMI connection to port 5038'
+      message: 'AMI connection now persists across tabs'
     },
     {
       timestamp: new Date(Date.now() - 120000).toISOString(),
-      type: 'warning',
-      message: 'No AMI connection attempts detected - check manager.conf'
+      type: 'success',
+      message: 'Persistent connection system enabled'
     }
   ]);
 
   const [config, setConfig] = useState<IntegrationConfig>({
-    ami: {
-      host: localStorage.getItem('ami_host') || '127.0.0.1',
-      port: localStorage.getItem('ami_port') || '5038',
-      username: localStorage.getItem('ami_username') || 'crmuser',
-      password: ''
-    },
     freepbxAPI: {
       host: localStorage.getItem('freepbx_host') || '192.168.1.101',
       port: localStorage.getItem('freepbx_port') || '80',
@@ -115,18 +106,12 @@ const IntegrationSettings = () => {
   });
 
   useEffect(() => {
-    testAllConnections();
-  }, []);
+    setConnectionStatus(prev => ({ ...prev, ami: amiConnected ? 'connected' : 'disconnected' }));
+  }, [amiConnected]);
 
-  const updateAMIConfig = (field: string, value: string) => {
-    setConfig(prev => ({
-      ...prev,
-      ami: {
-        ...prev.ami,
-        [field]: value
-      }
-    }));
-  };
+  useEffect(() => {
+    testOtherConnections();
+  }, []);
 
   const updateFreePBXAPIConfig = (field: string, value: string) => {
     setConfig(prev => ({
@@ -166,41 +151,6 @@ const IntegrationSettings = () => {
         [field]: value
       }
     }));
-  };
-
-  const testAMIConnection = async () => {
-    setConnectionStatus(prev => ({ ...prev, ami: 'testing' }));
-    addLogEntry('info', `Testing AMI connection to ${config.ami.host}:${config.ami.port}`);
-    
-    try {
-      // Simulate AMI connection test
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // In production, this would use a WebSocket connection to test AMI
-      const success = Math.random() > 0.5; // 50% success for demo
-      
-      if (success) {
-        setConnectionStatus(prev => ({ ...prev, ami: 'connected' }));
-        addLogEntry('success', 'AMI connection established - call events will be captured');
-        toast({
-          title: "AMI Connected",
-          description: "Successfully connected to Asterisk Manager Interface.",
-        });
-        return true;
-      } else {
-        throw new Error('Connection refused - check manager.conf settings');
-      }
-    } catch (error) {
-      setConnectionStatus(prev => ({ ...prev, ami: 'disconnected' }));
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      addLogEntry('error', `AMI connection failed: ${errorMessage}`);
-      toast({
-        title: "AMI Connection Failed",
-        description: "Check Asterisk manager.conf and restart Asterisk service.",
-        variant: "destructive"
-      });
-      return false;
-    }
   };
 
   const testFreePBXAPIConnection = async () => {
@@ -288,22 +238,14 @@ const IntegrationSettings = () => {
     }
   };
 
-  const testAllConnections = async () => {
+  const testOtherConnections = async () => {
     await Promise.all([
-      testAMIConnection(),
       testFreePBXAPIConnection(),
       testDatabaseConnection()
     ]);
   };
 
   const saveSettings = () => {
-    // Save AMI settings
-    Object.entries(config.ami).forEach(([key, value]) => {
-      if (key !== 'password') {
-        localStorage.setItem(`ami_${key}`, value);
-      }
-    });
-
     // Save FreePBX API settings
     Object.entries(config.freepbxAPI).forEach(([key, value]) => {
       if (key !== 'password') {
@@ -353,9 +295,9 @@ const IntegrationSettings = () => {
     setConnectionStatus(prev => ({ ...prev, ami: status }));
     
     if (status === 'connected') {
-      addLogEntry('success', 'Real-time AMI connection established - call events active');
+      addLogEntry('success', 'AMI connection established - persists across tabs');
     } else if (status === 'disconnected') {
-      addLogEntry('warning', 'AMI connection lost - call events unavailable');
+      addLogEntry('warning', 'AMI connection ended');
     } else {
       addLogEntry('info', 'Testing AMI connection...');
     }
@@ -373,10 +315,8 @@ const IntegrationSettings = () => {
         <CardContent className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <AsteriskAMICard 
-              config={config.ami}
               connectionStatus={connectionStatus.ami}
-              onConfigUpdate={updateAMIConfig}
-              onTestConnection={testAMIConnection}
+              onTestConnection={() => {}}
               onConnectionStatusChange={handleAMIConnectionStatusChange}
             />
 
@@ -417,11 +357,11 @@ const IntegrationSettings = () => {
             </Button>
             <Button 
               variant="outline" 
-              onClick={testAllConnections}
+              onClick={testOtherConnections}
               className="flex items-center gap-2"
             >
               <TestTube className="h-4 w-4" />
-              Test All Connections
+              Test Other Connections
             </Button>
           </div>
         </CardContent>

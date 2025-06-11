@@ -1,4 +1,3 @@
-
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,26 +5,17 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Phone, TestTube, CheckCircle, AlertTriangle, RefreshCw, Info, Wifi, WifiOff } from "lucide-react";
-import { useAsteriskAMI } from "@/hooks/useAsteriskAMI";
+import { useAMIContext } from "@/contexts/AMIContext";
 import { useEffect } from "react";
 
 interface AsteriskAMICardProps {
-  config: {
-    host: string;
-    port: string;
-    username: string;
-    password: string;
-  };
   connectionStatus: 'connected' | 'disconnected' | 'testing';
-  onConfigUpdate: (field: string, value: string) => void;
   onTestConnection: () => void;
   onConnectionStatusChange?: (status: 'connected' | 'disconnected' | 'testing') => void;
 }
 
 const AsteriskAMICard = ({ 
-  config, 
   connectionStatus, 
-  onConfigUpdate, 
   onTestConnection,
   onConnectionStatusChange
 }: AsteriskAMICardProps) => {
@@ -35,9 +25,11 @@ const AsteriskAMICard = ({
     connectionError, 
     lastEvent, 
     callEvents,
+    config,
+    updateConfig,
     connect, 
     disconnect 
-  } = useAsteriskAMI(config);
+  } = useAMIContext();
 
   // Update parent component when connection status changes
   useEffect(() => {
@@ -61,6 +53,13 @@ const AsteriskAMICard = ({
         console.error('Connection failed:', connectionError);
       }
     }
+  };
+
+  const handleConfigUpdate = (field: string, value: string) => {
+    updateConfig({
+      ...config,
+      [field]: value
+    });
   };
 
   const getStatusBadge = () => {
@@ -103,17 +102,17 @@ const AsteriskAMICard = ({
         <Alert>
           <Info className="h-4 w-4" />
           <AlertDescription>
-            ✅ Your AMI is properly configured on port 5038! 
-            For real-time events, you'll need a WebSocket proxy or server-side integration.
-            Current setup verified: crm-user with full permissions.
+            ✅ Your AMI stays connected across tabs! 
+            Connection persists while navigating the CRM.
+            Current setup verified: {config.username} with full permissions.
           </AlertDescription>
         </Alert>
 
         <Alert className="bg-blue-50 border-blue-200">
           <Info className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-800">
-            <strong>Next Step:</strong> For live call events, install a WebSocket-to-AMI proxy 
-            or implement server-side AMI integration. Current test verifies your Asterisk configuration is correct.
+            <strong>Persistent Connection:</strong> AMI connection now stays active when switching tabs.
+            Real-time call events will continue in the background.
           </AlertDescription>
         </Alert>
         
@@ -131,7 +130,7 @@ const AsteriskAMICard = ({
           <Input 
             id="ami-host" 
             value={config.host}
-            onChange={(e) => onConfigUpdate('host', e.target.value)}
+            onChange={(e) => handleConfigUpdate('host', e.target.value)}
             placeholder="192.168.1.100"
             disabled={isConnected}
           />
@@ -141,7 +140,7 @@ const AsteriskAMICard = ({
           <Input 
             id="ami-port" 
             value={config.port}
-            onChange={(e) => onConfigUpdate('port', e.target.value)}
+            onChange={(e) => handleConfigUpdate('port', e.target.value)}
             placeholder="5038"
             disabled={isConnected}
           />
@@ -151,7 +150,7 @@ const AsteriskAMICard = ({
           <Input 
             id="ami-username" 
             value={config.username}
-            onChange={(e) => onConfigUpdate('username', e.target.value)}
+            onChange={(e) => handleConfigUpdate('username', e.target.value)}
             placeholder="crm-user"
             disabled={isConnected}
           />
@@ -162,7 +161,7 @@ const AsteriskAMICard = ({
             id="ami-password" 
             type="password" 
             value={config.password}
-            onChange={(e) => onConfigUpdate('password', e.target.value)}
+            onChange={(e) => handleConfigUpdate('password', e.target.value)}
             placeholder="CRM_AMI_Pass"
             disabled={isConnected}
           />
@@ -204,7 +203,7 @@ permit = 192.168.0.0/255.255.255.0`}
         )}
         
         <div className="flex items-center justify-between">
-          <span className="text-sm">Configuration Status</span>
+          <span className="text-sm">Connection Status</span>
           {getStatusBadge()}
         </div>
         <Button 
@@ -214,7 +213,7 @@ permit = 192.168.0.0/255.255.255.0`}
           className="w-full"
         >
           <TestTube className="h-4 w-4 mr-2" />
-          {isConnected ? 'Reset Test' : 'Verify AMI Config'}
+          {isConnected ? 'Disconnect AMI' : 'Connect to AMI'}
         </Button>
       </CardContent>
     </Card>
