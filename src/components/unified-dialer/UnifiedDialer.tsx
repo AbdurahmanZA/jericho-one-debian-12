@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAMIContext } from "@/contexts/AMIContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { callRecordsService } from "@/services/callRecordsService";
+import DiscordChat from "@/components/discord-chat/DiscordChat";
 
 interface ActiveCall {
   id: string;
@@ -41,6 +42,7 @@ const UnifiedDialer = ({ onLeadCreated }: UnifiedDialerProps) => {
   const { isConnected, originateCall, callEvents } = useAMIContext();
   
   const [isMinimized, setIsMinimized] = useState(false);
+  const [isChatMinimized, setIsChatMinimized] = useState(true);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [contactName, setContactName] = useState('');
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
@@ -285,14 +287,20 @@ const UnifiedDialer = ({ onLeadCreated }: UnifiedDialerProps) => {
     }
   };
 
-  if (isMinimized && !activeCall) {
+  if (isMinimized && !activeCall && isChatMinimized) {
     return (
-      <div className="fixed bottom-4 right-4 z-50">
+      <div className="fixed bottom-4 right-4 z-50 flex gap-2">
         <Button
           onClick={() => setIsMinimized(false)}
           className="rounded-full w-12 h-12 bg-primary hover:bg-primary/90"
         >
           <Phone className="h-5 w-5" />
+        </Button>
+        <Button
+          onClick={() => setIsChatMinimized(false)}
+          className="rounded-full w-12 h-12 bg-blue-600 hover:bg-blue-700"
+        >
+          <MessageCircle className="h-5 w-5" />
         </Button>
       </div>
     );
@@ -300,123 +308,141 @@ const UnifiedDialer = ({ onLeadCreated }: UnifiedDialerProps) => {
 
   return (
     <div className={`fixed bottom-0 left-0 right-0 z-40 transition-all duration-300 ${
-      isMinimized ? 'translate-y-full' : 'translate-y-0'
+      isMinimized && isChatMinimized ? 'translate-y-full' : 'translate-y-0'
     }`}>
-      <Card className="rounded-t-lg border-b-0 shadow-lg">
-        <CardContent className="p-4">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Phone className="h-4 w-4" />
-              <span className="font-medium">Phone</span>
-              {user?.extension && (
-                <Badge variant="outline" className="text-xs">
-                  Ext: {user.extension}
-                </Badge>
-              )}
-              {isConnected ? (
-                <Badge className="bg-green-100 text-green-800 text-xs">Connected</Badge>
-              ) : (
-                <Badge variant="destructive" className="text-xs">Disconnected</Badge>
-              )}
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsMinimized(true)}
-            >
-              <Minimize2 className="h-4 w-4" />
-            </Button>
-          </div>
-
-          {/* Active Call Display */}
-          {activeCall && (
-            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                    <User className="h-4 w-4 text-green-600" />
-                  </div>
-                  <div>
-                    <div className="font-medium">{activeCall.leadName}</div>
-                    <div className="text-sm text-gray-600">{activeCall.phone}</div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Clock className="h-3 w-3" />
-                      <span className="text-sm font-mono font-bold text-green-700">
-                        {activeCall.duration}
-                      </span>
-                      <Badge className={`text-xs ${
-                        activeCall.status === 'connected' ? 'bg-green-100 text-green-800' :
-                        activeCall.status === 'ringing' ? 'bg-blue-100 text-blue-800' :
-                        'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {activeCall.status === 'ringing' ? 'Ringing' : 
-                         activeCall.status === 'on-hold' ? 'On Hold' : 'Connected'}
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button 
-                    size="sm" 
-                    variant={isMuted ? "destructive" : "outline"}
-                    onClick={toggleMute}
-                  >
-                    {isMuted ? <MicOff className="h-3 w-3" /> : <Mic className="h-3 w-3" />}
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    variant={activeCall.status === 'on-hold' ? "default" : "outline"}
-                    onClick={holdCall}
-                  >
-                    {activeCall.status === 'on-hold' ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    variant="destructive"
-                    onClick={endCall}
-                  >
-                    <PhoneOff className="h-3 w-3" />
-                  </Button>
-                </div>
+      <div className="flex justify-between items-end p-4 gap-4">
+        {/* Phone Dialer */}
+        <Card className={`flex-1 max-w-3xl rounded-t-lg border-b-0 shadow-lg ${isMinimized ? 'hidden' : ''}`}>
+          <CardContent className="p-4">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Phone className="h-4 w-4" />
+                <span className="font-medium">Phone</span>
+                {user?.extension && (
+                  <Badge variant="outline" className="text-xs">
+                    Ext: {user.extension}
+                  </Badge>
+                )}
+                {isConnected ? (
+                  <Badge className="bg-green-100 text-green-800 text-xs">Connected</Badge>
+                ) : (
+                  <Badge variant="destructive" className="text-xs">Disconnected</Badge>
+                )}
               </div>
-            </div>
-          )}
-
-          {/* Dialer Interface */}
-          {!activeCall && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Input
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                  placeholder="Phone number"
-                  className="text-sm"
-                />
-              </div>
-              <div className="space-y-2">
-                <Input
-                  value={contactName}
-                  onChange={(e) => setContactName(e.target.value)}
-                  placeholder="Contact name (optional)"
-                  className="text-sm"
-                />
-              </div>
-              <div className="space-y-2">
-                <Button 
-                  onClick={initiateCall} 
-                  disabled={!user?.extension || !phoneNumber || !isConnected}
-                  className="w-full"
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
                   size="sm"
+                  onClick={() => setIsChatMinimized(!isChatMinimized)}
                 >
-                  <PhoneCall className="h-3 w-3 mr-2" />
-                  {!isConnected ? 'AMI Not Connected' : !user?.extension ? 'No Extension' : 'Call'}
+                  Chat {isChatMinimized ? <Maximize2 className="h-3 w-3 ml-1" /> : <Minimize2 className="h-3 w-3 ml-1" />}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsMinimized(true)}
+                >
+                  <Minimize2 className="h-4 w-4" />
                 </Button>
               </div>
             </div>
-          )}
-        </CardContent>
-      </Card>
+
+            {/* Active Call Display */}
+            {activeCall && (
+              <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                      <User className="h-4 w-4 text-green-600" />
+                    </div>
+                    <div>
+                      <div className="font-medium">{activeCall.leadName}</div>
+                      <div className="text-sm text-gray-600">{activeCall.phone}</div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Clock className="h-3 w-3" />
+                        <span className="text-sm font-mono font-bold text-green-700">
+                          {activeCall.duration}
+                        </span>
+                        <Badge className={`text-xs ${
+                          activeCall.status === 'connected' ? 'bg-green-100 text-green-800' :
+                          activeCall.status === 'ringing' ? 'bg-blue-100 text-blue-800' :
+                          'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {activeCall.status === 'ringing' ? 'Ringing' : 
+                           activeCall.status === 'on-hold' ? 'On Hold' : 'Connected'}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button 
+                      size="sm" 
+                      variant={isMuted ? "destructive" : "outline"}
+                      onClick={toggleMute}
+                    >
+                      {isMuted ? <MicOff className="h-3 w-3" /> : <Mic className="h-3 w-3" />}
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant={activeCall.status === 'on-hold' ? "default" : "outline"}
+                      onClick={holdCall}
+                    >
+                      {activeCall.status === 'on-hold' ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="destructive"
+                      onClick={endCall}
+                    >
+                      <PhoneOff className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Dialer Interface */}
+            {!activeCall && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Input
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    placeholder="Phone number"
+                    className="text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Input
+                    value={contactName}
+                    onChange={(e) => setContactName(e.target.value)}
+                    placeholder="Contact name (optional)"
+                    className="text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Button 
+                    onClick={initiateCall} 
+                    disabled={!user?.extension || !phoneNumber || !isConnected}
+                    className="w-full"
+                    size="sm"
+                  >
+                    <PhoneCall className="h-3 w-3 mr-2" />
+                    {!isConnected ? 'AMI Not Connected' : !user?.extension ? 'No Extension' : 'Call'}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Discord Chat */}
+        <DiscordChat 
+          isMinimized={isChatMinimized} 
+          onToggleMinimize={() => setIsChatMinimized(!isChatMinimized)} 
+        />
+      </div>
     </div>
   );
 };
