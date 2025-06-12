@@ -1,8 +1,7 @@
-
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Clock, User, Play, Phone } from "lucide-react";
+import { Clock, User, Play, Phone, Radio } from "lucide-react";
 
 interface CallRecord {
   id: number;
@@ -13,6 +12,7 @@ interface CallRecord {
   timestamp: string;
   hasRecording: boolean;
   notes: string;
+  agent: string;
 }
 
 interface CallHistoryProps {
@@ -24,8 +24,10 @@ const CallHistory = ({ calls }: CallHistoryProps) => {
     switch (outcome.toLowerCase()) {
       case "qualified": return "bg-green-100 text-green-800";
       case "callback scheduled": return "bg-blue-100 text-blue-800";
+      case "answered": return "bg-green-100 text-green-800";
       case "not interested": return "bg-red-100 text-red-800";
       case "no answer": return "bg-gray-100 text-gray-800";
+      case "busy": return "bg-yellow-100 text-yellow-800";
       default: return "bg-yellow-100 text-yellow-800";
     }
   };
@@ -36,6 +38,10 @@ const CallHistory = ({ calls }: CallHistoryProps) => {
         <CardTitle className="flex items-center gap-2">
           <Clock className="h-5 w-5" />
           Recent Call History
+          <Badge variant="default" className="flex items-center gap-1">
+            <Radio className="h-3 w-3" />
+            Live AMI Data
+          </Badge>
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -56,6 +62,9 @@ const CallHistory = ({ calls }: CallHistoryProps) => {
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
                           {call.duration}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          by {call.agent}
                         </span>
                       </div>
                       <Badge className={`mt-1 text-xs ${getOutcomeColor(call.outcome)}`}>

@@ -46,6 +46,11 @@ class AMIBridgeClient {
       
       if (result.success) {
         this.connectWebSocket();
+        
+        // Initialize call record handler when connected
+        const { amiCallRecordHandler } = await import('./amiCallRecordHandler');
+        amiCallRecordHandler.initialize();
+        
         return true;
       } else {
         throw new Error(result.error);

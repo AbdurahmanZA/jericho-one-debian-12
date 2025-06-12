@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { 
   MessageCircle, 
   Send, 
@@ -25,6 +26,7 @@ interface DiscordWebhookCardProps {
 
 const DiscordWebhookCard = ({ config, onConfigUpdate }: DiscordWebhookCardProps) => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [testMessage, setTestMessage] = useState('');
   const [isConnected, setIsConnected] = useState(false);
 
@@ -71,7 +73,7 @@ const DiscordWebhookCard = ({ config, onConfigUpdate }: DiscordWebhookCardProps)
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          content: `🧪 **Test Message from JERICHO ONE**\n\n${testMessage}`,
+          content: `🧪 **Test Message from JERICHO ONE**\n\n${testMessage}\n\n**Sent by:** ${user?.name || 'Unknown User'} (${user?.extension || 'No Extension'})`,
           username: 'JERICHO ONE CRM',
           avatar_url: 'https://via.placeholder.com/64x64/2D5563/ffffff?text=J1'
         })
@@ -107,7 +109,7 @@ const DiscordWebhookCard = ({ config, onConfigUpdate }: DiscordWebhookCardProps)
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          content: `${actionEmoji} **Lead ${action.charAt(0).toUpperCase() + action.slice(1)}**\n\n**Lead:** ${leadName}\n**Action:** ${details}\n**Time:** ${new Date().toLocaleString()}`,
+          content: `${actionEmoji} **Lead ${action.charAt(0).toUpperCase() + action.slice(1)}**\n\n**Lead:** ${leadName}\n**Action:** ${details}\n**Agent:** ${user?.name || 'Unknown User'} (Ext: ${user?.extension || 'N/A'})\n**Time:** ${new Date().toLocaleString()}`,
           username: 'JERICHO ONE CRM',
           avatar_url: 'https://via.placeholder.com/64x64/2D5563/ffffff?text=J1'
         })
@@ -120,7 +122,7 @@ const DiscordWebhookCard = ({ config, onConfigUpdate }: DiscordWebhookCardProps)
   // Store the sendLeadUpdate function globally so other components can use it
   useEffect(() => {
     (window as any).sendDiscordNotification = sendLeadUpdate;
-  }, [config.enabled, config.url]);
+  }, [config.enabled, config.url, user]);
 
   const openDiscordApp = () => {
     window.open('https://discord.com/app', '_blank');
