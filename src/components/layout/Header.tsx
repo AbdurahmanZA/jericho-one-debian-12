@@ -1,58 +1,54 @@
 
-import { Button } from '@/components/ui/button';
-import { useAuth } from '@/contexts/AuthContext';
-import { useToast } from '@/hooks/use-toast';
-import { LogOut, User } from 'lucide-react';
-import RoleSwitcher from '@/components/auth/RoleSwitcher';
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { LogOut, User } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { useAMIContext } from "@/contexts/AMIContext";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const Header = () => {
   const { user, logout } = useAuth();
-  const { toast } = useToast();
+  const { isConnected } = useAMIContext();
 
-  const handleLogout = () => {
-    logout();
-    toast({
-      title: "Logged Out",
-      description: "You have been successfully logged out.",
-    });
-  };
+  if (!user) return null;
 
   return (
-    <header className="bg-background border-b border-border px-6 py-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-primary">JERICHO ONE</h1>
-          <p className="text-sm text-muted-foreground">Professional CRM Platform</p>
-        </div>
-        
-        {user && (
-          <div className="flex items-center gap-4">
-            <RoleSwitcher />
-            
-            <div className="flex items-center gap-2 text-sm">
+    <header className="border-b bg-card">
+      <div className="container mx-auto px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <h1 className="text-xl font-bold text-primary">JERICHO ONE</h1>
+            <Badge 
+              className={`text-xs ${
+                isConnected 
+                  ? 'bg-green-100 text-green-800 border-green-200' 
+                  : 'bg-red-100 text-red-800 border-red-200'
+              }`}
+            >
+              {isConnected ? 'AMI Connected' : 'AMI Disconnected'}
+            </Badge>
+          </div>
+          
+          <div className="flex items-center space-x-4">
+            <ThemeToggle />
+            <div className="flex items-center space-x-2">
               <User className="h-4 w-4" />
-              <div className="text-right">
-                <p className="font-medium">{user.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {user.role}
-                  {user.originalRole !== user.role && (
-                    <span className="text-primary"> (as {user.role})</span>
-                  )}
-                </p>
-              </div>
+              <span className="text-sm font-medium">{user.name}</span>
+              <Badge variant="outline" className="text-xs">
+                {user.role}
+              </Badge>
             </div>
-            
             <Button 
               variant="outline" 
               size="sm" 
-              onClick={handleLogout}
-              className="flex items-center gap-2"
+              onClick={logout}
+              className="flex items-center space-x-2"
             >
               <LogOut className="h-4 w-4" />
-              Logout
+              <span>Logout</span>
             </Button>
           </div>
-        )}
+        </div>
       </div>
     </header>
   );
