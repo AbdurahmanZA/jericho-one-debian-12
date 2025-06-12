@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
@@ -10,6 +11,7 @@ import UserManagement from "@/components/UserManagement";
 import ReportsAnalytics from "@/components/ReportsAnalytics";
 import IntegrationSettings from "@/components/IntegrationSettings";
 import SystemStatus from "@/components/SystemStatus";
+import DatabaseViewer from "@/components/DatabaseViewer";
 
 const Index = () => {
   const { user } = useAuth();
@@ -26,11 +28,12 @@ const Index = () => {
     <AMIProvider>
       <div className="container mx-auto p-6 max-w-7xl">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-8 lg:grid-cols-8">
+          <TabsList className="grid w-full grid-cols-9 lg:grid-cols-9">
             <TabsTrigger value="call-center">Call Center</TabsTrigger>
             <TabsTrigger value="leads">Leads</TabsTrigger>
             <TabsTrigger value="contacts">Contacts</TabsTrigger>
             <TabsTrigger value="call-logs">Call Logs</TabsTrigger>
+            <TabsTrigger value="database">Database</TabsTrigger>
             {isManager && <TabsTrigger value="users">Users</TabsTrigger>}
             {isManager && <TabsTrigger value="reports">Reports</TabsTrigger>}
             {isAdmin && <TabsTrigger value="integration">Integration</TabsTrigger>}
@@ -51,6 +54,10 @@ const Index = () => {
 
           <TabsContent value="call-logs" className="space-y-4">
             <CallLogs />
+          </TabsContent>
+
+          <TabsContent value="database" className="space-y-4">
+            <DatabaseViewer />
           </TabsContent>
 
           {isManager && (

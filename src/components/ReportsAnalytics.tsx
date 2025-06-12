@@ -1,7 +1,9 @@
 
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { callRecordsService } from "@/services/callRecordsService";
 import { 
   BarChart3, 
   TrendingUp, 
@@ -10,7 +12,8 @@ import {
   Clock,
   Target,
   Download,
-  Calendar
+  Calendar,
+  RefreshCw
 } from "lucide-react";
 
 interface ReportsAnalyticsProps {
@@ -18,66 +21,134 @@ interface ReportsAnalyticsProps {
 }
 
 const ReportsAnalytics = ({ userRole }: ReportsAnalyticsProps) => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [stats, setStats] = useState({
+    totalCalls: 0,
+    contactRate: 0,
+    qualified: 0,
+    averageDuration: 0
+  });
+  const [agentPerformance, setAgentPerformance] = useState<any[]>([]);
+
+  // Load live data
+  const loadLiveData = () => {
+    setIsLoading(true);
+    
+    setTimeout(() => {
+      const summaryStats = callRecordsService.getSummaryStats();
+      const records = callRecordsService.getRecords();
+      
+      // Calculate agent performance
+      const agentStats = records.reduce((acc: any, record) => {
+        if (!acc[record.agent]) {
+          acc[record.agent] = {
+            name: record.agent,
+            calls: 0,
+            qualified: 0,
+            totalDuration: 0,
+            answered: 0
+          };
+        }
+        
+        acc[record.agent].calls++;
+        if (record.outcome.toLowerCase().includes('qualified')) {
+          acc[record.agent].qualified++;
+        }
+        if (record.outcome !== 'No Answer' && record.outcome !== 'Not Interested') {
+          acc[record.agent].answered++;
+        }
+        
+        const parts = record.duration.split(':');
+        const minutes = parseInt(parts[0]) || 0;
+        const seconds = parseInt(parts[1]) || 0;
+        acc[record.agent].totalDuration += (minutes * 60) + seconds;
+        
+        return acc;
+      }, {});
+
+      const agentArray = Object.values(agentStats).map((agent: any) => ({
+        name: agent.name,
+        calls: agent.calls,
+        contactRate: agent.calls > 0 ? `${Math.round((agent.answered / agent.calls) * 100)}%` : '0%',
+        qualified: agent.qualified,
+        avgDuration: agent.calls > 0 ? 
+          `${Math.floor(agent.totalDuration / agent.calls / 60)}:${String(Math.floor((agent.totalDuration / agent.calls) % 60)).padStart(2, '0')}` : 
+          '0:00'
+      }));
+
+      setStats({
+        totalCalls: summaryStats.totalCalls,
+        contactRate: summaryStats.contactRate,
+        qualified: summaryStats.qualified,
+        averageDuration: summaryStats.averageDuration
+      });
+      
+      setAgentPerformance(agentArray);
+      setLastUpdated(new Date());
+      setIsLoading(false);
+    }, 1000);
+  };
+
+  useEffect(() => {
+    loadLiveData();
+    
+    // Auto-refresh every 30 seconds
+    const interval = setInterval(loadLiveData, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const formatDuration = (seconds: number): string => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
   const performanceMetrics = [
     {
       title: "Total Calls Today",
-      value: "127",
+      value: stats.totalCalls.toString(),
       change: "+12%",
-      trend: "up",
+      trend: "up" as const,
       icon: Phone
     },
     {
       title: "Contact Rate",
-      value: "68%",
+      value: `${stats.contactRate}%`,
       change: "+5%",
-      trend: "up",
+      trend: "up" as const,
       icon: Target
     },
     {
       title: "Qualified Leads",
-      value: "23",
+      value: stats.qualified.toString(),
       change: "+18%",
-      trend: "up",
+      trend: "up" as const,
       icon: Users
     },
     {
       title: "Avg Call Duration",
-      value: "4:32",
+      value: formatDuration(stats.averageDuration),
       change: "-8%",
-      trend: "down",
+      trend: "down" as const,
       icon: Clock
-    }
-  ];
-
-  const agentPerformance = [
-    {
-      name: "Sarah Wilson",
-      calls: 45,
-      contactRate: "72%",
-      qualified: 8,
-      avgDuration: "5:12"
-    },
-    {
-      name: "Mike Davis",
-      calls: 38,
-      contactRate: "65%",
-      qualified: 6,
-      avgDuration: "4:48"
-    },
-    {
-      name: "John Parker",
-      calls: 44,
-      contactRate: "70%",
-      qualified: 9,
-      avgDuration: "3:56"
     }
   ];
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Reports & Analytics</h2>
+        <h2 className="text-2xl font-bold">Reports & Analytics (Live)</h2>
         <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            onClick={loadLiveData}
+            disabled={isLoading}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
           <Button variant="outline" className="flex items-center gap-2">
             <Calendar className="h-4 w-4" />
             Date Range
@@ -88,6 +159,21 @@ const ReportsAnalytics = ({ userRole }: ReportsAnalyticsProps) => {
           </Button>
         </div>
       </div>
+
+      {/* Live Update Indicator */}
+      <Card className="bg-green-50 border-green-200">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-green-800 font-medium">Live Data</span>
+            </div>
+            <span className="text-green-600 text-sm">
+              Last updated: {lastUpdated.toLocaleTimeString()}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Performance Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -121,7 +207,7 @@ const ReportsAnalytics = ({ userRole }: ReportsAnalyticsProps) => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BarChart3 className="h-5 w-5" />
-            Agent Performance Summary
+            Live Agent Performance
           </CardTitle>
         </CardHeader>
         <CardContent>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAMIContext } from "@/contexts/AMIContext";
+import { callRecordsService, CallRecord } from "@/services/callRecordsService";
 import CallDialer from "./call-center/CallDialer";
 import ActiveCallDisplay from "./call-center/ActiveCallDisplay";
 import PostCallActions from "./call-center/PostCallActions";
@@ -20,17 +21,6 @@ interface ActiveCall {
   leadId?: string;
 }
 
-interface CallHistoryEntry {
-  id: number;
-  leadName: string;
-  phone: string;
-  duration: string;
-  outcome: string;
-  timestamp: string;
-  hasRecording: boolean;
-  notes: string;
-}
-
 const CallCenter = ({ userRole }: CallCenterProps) => {
   const { toast } = useToast();
   const { pendingCall, clearPendingCall } = useAMIContext();
@@ -41,28 +31,19 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [extension, setExtension] = useState(localStorage.getItem('user_extension') || '');
-  const [callHistory, setCallHistory] = useState<CallHistoryEntry[]>([
-    {
-      id: 1,
-      leadName: "Sarah Johnson",
-      phone: "+1-555-0456",
-      duration: "00:05:32",
-      outcome: "Callback Scheduled",
-      timestamp: "10:30 AM",
-      hasRecording: true,
-      notes: "Interested in premium package, callback scheduled for tomorrow"
-    },
-    {
-      id: 2,
-      leadName: "Mike Davis",
-      phone: "+1-555-0789",
-      duration: "00:03:45",
-      outcome: "Not Interested",
-      timestamp: "10:15 AM",
-      hasRecording: true,
-      notes: "Currently satisfied with existing solution"
-    }
-  ]);
+  const [callHistory, setCallHistory] = useState<CallRecord[]>([]);
+
+  // Subscribe to call records service
+  useEffect(() => {
+    const unsubscribe = callRecordsService.subscribe((records) => {
+      setCallHistory(records.slice(0, 10)); // Show latest 10 calls
+    });
+
+    // Initial load
+    setCallHistory(callRecordsService.getRecords().slice(0, 10));
+
+    return unsubscribe;
+  }, []);
 
   // Handle pending calls from Lead Management
   useEffect(() => {
@@ -168,19 +149,21 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
         description: `Call with ${activeCall.leadName} has ended. Duration: ${activeCall.duration}`,
       });
 
-      // Add call to history
-      const newHistoryEntry: CallHistoryEntry = {
-        id: Date.now(),
+      // Add call to shared service instead of local state
+      const currentUser = localStorage.getItem('current_user') || 'Unknown Agent';
+      callRecordsService.addRecord({
         leadName: activeCall.leadName,
         phone: activeCall.phone,
         duration: activeCall.duration,
         outcome: callOutcome || 'Call Completed',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        date: new Date().toISOString().split('T')[0],
         hasRecording: isRecording,
-        notes: callNotes || 'No notes added'
-      };
-
-      setCallHistory(prev => [newHistoryEntry, ...prev]);
+        notes: callNotes || 'No notes added',
+        agent: currentUser,
+        callType: 'outgoing',
+        leadId: activeCall.leadId
+      });
       
       setActiveCall(null);
       setIsRecording(false);
