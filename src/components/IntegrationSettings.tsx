@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +8,7 @@ import DatabaseConfigCard from "./integration/DatabaseConfigCard";
 import IntegrationLogsCard from "./integration/IntegrationLogsCard";
 import SyncSettingsCard from "./integration/SyncSettingsCard";
 import SecuritySettingsCard from "./integration/SecuritySettingsCard";
+import DiscordWebhookCard from "./integration/DiscordWebhookCard";
 
 interface ConnectionStatus {
   amiBridge: 'connected' | 'disconnected' | 'testing';
@@ -38,6 +38,11 @@ interface IntegrationConfig {
   webhook: {
     url: string;
     secret: string;
+  };
+  discord: {
+    url: string;
+    channelName: string;
+    enabled: boolean;
   };
 }
 
@@ -84,6 +89,11 @@ const IntegrationSettings = () => {
     webhook: {
       url: localStorage.getItem('webhook_url') || 'https://your-domain.com/webhook',
       secret: localStorage.getItem('webhook_secret') || ''
+    },
+    discord: {
+      url: localStorage.getItem('discord_webhook') || '',
+      channelName: localStorage.getItem('discord_channel') || '#leads',
+      enabled: localStorage.getItem('discord_webhook_enabled') === 'true'
     }
   });
 
@@ -116,6 +126,16 @@ const IntegrationSettings = () => {
       ...prev,
       webhook: {
         ...prev.webhook,
+        [field]: value
+      }
+    }));
+  };
+
+  const updateDiscordConfig = (field: string, value: string | boolean) => {
+    setConfig(prev => ({
+      ...prev,
+      discord: {
+        ...prev.discord,
         [field]: value
       }
     }));
@@ -184,6 +204,11 @@ const IntegrationSettings = () => {
       }
     });
 
+    // Save Discord settings
+    localStorage.setItem('discord_webhook', config.discord.url);
+    localStorage.setItem('discord_channel', config.discord.channelName);
+    localStorage.setItem('discord_webhook_enabled', config.discord.enabled.toString());
+
     toast({
       title: "Settings Saved",
       description: "Your integration settings have been successfully updated.",
@@ -248,6 +273,11 @@ const IntegrationSettings = () => {
           <SyncSettingsCard 
             config={config.sync}
             onConfigUpdate={updateSyncConfig}
+          />
+
+          <DiscordWebhookCard 
+            config={config.discord}
+            onConfigUpdate={updateDiscordConfig}
           />
 
           <SecuritySettingsCard 
