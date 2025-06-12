@@ -4,17 +4,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Settings, Save, TestTube } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useAMIContext } from "@/contexts/AMIContext";
-import AsteriskAMICard from "./integration/AsteriskAMICard";
-import FreePBXAPICard from "./integration/FreePBXAPICard";
+import AMIBridgeCard from "./integration/AMIBridgeCard";
 import DatabaseConfigCard from "./integration/DatabaseConfigCard";
 import IntegrationLogsCard from "./integration/IntegrationLogsCard";
 import SyncSettingsCard from "./integration/SyncSettingsCard";
 import SecuritySettingsCard from "./integration/SecuritySettingsCard";
 
 interface ConnectionStatus {
-  ami: 'connected' | 'disconnected' | 'testing';
-  freepbxAPI: 'connected' | 'disconnected' | 'testing';
+  amiBridge: 'connected' | 'disconnected' | 'testing';
   database: 'connected' | 'disconnected' | 'testing';
 }
 
@@ -25,13 +22,6 @@ interface LogEntry {
 }
 
 interface IntegrationConfig {
-  freepbxAPI: {
-    host: string;
-    port: string;
-    username: string;
-    password: string;
-    apiKey: string;
-  };
   database: {
     host: string;
     port: string;
@@ -53,11 +43,9 @@ interface IntegrationConfig {
 
 const IntegrationSettings = () => {
   const { toast } = useToast();
-  const { isConnected: amiConnected } = useAMIContext();
   
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
-    ami: amiConnected ? 'connected' : 'disconnected',
-    freepbxAPI: 'disconnected',
+    amiBridge: 'disconnected',
     database: 'disconnected'
   });
 
@@ -70,23 +58,16 @@ const IntegrationSettings = () => {
     {
       timestamp: new Date(Date.now() - 60000).toISOString(),
       type: 'success',
-      message: 'Using AMI Bridge for all connections'
+      message: 'Using AMI Bridge for FreePBX communication'
     },
     {
       timestamp: new Date(Date.now() - 120000).toISOString(),
       type: 'success',
-      message: 'Direct AMI and API connections removed - now using bridge'
+      message: 'Bridge server configured for 192.168.0.5'
     }
   ]);
 
   const [config, setConfig] = useState<IntegrationConfig>({
-    freepbxAPI: {
-      host: localStorage.getItem('freepbx_host') || '192.168.1.101',
-      port: localStorage.getItem('freepbx_port') || '80',
-      username: localStorage.getItem('freepbx_username') || 'admin',
-      password: '',
-      apiKey: localStorage.getItem('freepbx_api_key') || ''
-    },
     database: {
       host: localStorage.getItem('db_host') || 'localhost',
       port: localStorage.getItem('db_port') || '3306',
@@ -107,22 +88,8 @@ const IntegrationSettings = () => {
   });
 
   useEffect(() => {
-    setConnectionStatus(prev => ({ ...prev, ami: amiConnected ? 'connected' : 'disconnected' }));
-  }, [amiConnected]);
-
-  useEffect(() => {
-    testOtherConnections();
+    testDatabaseConnection();
   }, []);
-
-  const updateFreePBXAPIConfig = (field: string, value: string) => {
-    setConfig(prev => ({
-      ...prev,
-      freepbxAPI: {
-        ...prev.freepbxAPI,
-        [field]: value
-      }
-    }));
-  };
 
   const updateDatabaseConfig = (field: string, value: string) => {
     setConfig(prev => ({
@@ -152,50 +119,6 @@ const IntegrationSettings = () => {
         [field]: value
       }
     }));
-  };
-
-  const testFreePBXAPIConnection = async () => {
-    setConnectionStatus(prev => ({ ...prev, freepbxAPI: 'testing' }));
-    addLogEntry('info', `Testing FreePBX API connection to ${config.freepbxAPI.host}:${config.freepbxAPI.port}`);
-    
-    try {
-      const protocol = config.freepbxAPI.port === '443' ? 'https' : 'http';
-      const url = `${protocol}://${config.freepbxAPI.host}:${config.freepbxAPI.port}/admin/api.php`;
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          module: 'sipsettings',
-          command: 'getall',
-          token: config.freepbxAPI.apiKey || undefined
-        })
-      });
-
-      if (response.ok) {
-        setConnectionStatus(prev => ({ ...prev, freepbxAPI: 'connected' }));
-        addLogEntry('success', 'FreePBX API connection successful');
-        toast({
-          title: "FreePBX API Connected",
-          description: "Successfully connected to FreePBX web interface.",
-        });
-        return true;
-      } else {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-    } catch (error) {
-      setConnectionStatus(prev => ({ ...prev, freepbxAPI: 'disconnected' }));
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      addLogEntry('error', `FreePBX API connection failed: ${errorMessage}`);
-      toast({
-        title: "FreePBX API Connection Failed",
-        description: "Check FreePBX web interface and API settings.",
-        variant: "destructive"
-      });
-      return false;
-    }
   };
 
   const testDatabaseConnection = async () => {
@@ -241,21 +164,7 @@ const IntegrationSettings = () => {
     }
   };
 
-  const testOtherConnections = async () => {
-    await Promise.all([
-      testFreePBXAPIConnection(),
-      testDatabaseConnection()
-    ]);
-  };
-
   const saveSettings = () => {
-    // Save FreePBX API settings
-    Object.entries(config.freepbxAPI).forEach(([key, value]) => {
-      if (key !== 'password') {
-        localStorage.setItem(`freepbx_${key}`, value);
-      }
-    });
-
     // Save database settings
     Object.entries(config.database).forEach(([key, value]) => {
       if (key !== 'password') {
@@ -294,11 +203,11 @@ const IntegrationSettings = () => {
     setIntegrationLogs([]);
   };
 
-  const handleAMIConnectionStatusChange = (status: 'connected' | 'disconnected' | 'testing') => {
-    setConnectionStatus(prev => ({ ...prev, ami: status }));
+  const handleAMIBridgeConnectionStatusChange = (status: 'connected' | 'disconnected' | 'testing') => {
+    setConnectionStatus(prev => ({ ...prev, amiBridge: status }));
     
     if (status === 'connected') {
-      addLogEntry('success', 'AMI Bridge connection established');
+      addLogEntry('success', 'AMI Bridge connection established to 192.168.0.5');
     } else if (status === 'disconnected') {
       addLogEntry('warning', 'AMI Bridge connection ended');
     } else {
@@ -317,17 +226,17 @@ const IntegrationSettings = () => {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <AsteriskAMICard 
-              connectionStatus={connectionStatus.ami}
+            <AMIBridgeCard 
+              connectionStatus={connectionStatus.amiBridge}
               onTestConnection={() => {}}
-              onConnectionStatusChange={handleAMIConnectionStatusChange}
+              onConnectionStatusChange={handleAMIBridgeConnectionStatusChange}
             />
 
-            <FreePBXAPICard 
-              config={config.freepbxAPI}
-              connectionStatus={connectionStatus.freepbxAPI}
-              onConfigUpdate={updateFreePBXAPIConfig}
-              onTestConnection={testFreePBXAPIConnection}
+            <DatabaseConfigCard 
+              config={config.database}
+              connectionStatus={connectionStatus.database}
+              onConfigUpdate={updateDatabaseConfig}
+              onTestConnection={testDatabaseConnection}
             />
 
             <IntegrationLogsCard 
@@ -335,13 +244,6 @@ const IntegrationSettings = () => {
               onClearLogs={clearLogs}
             />
           </div>
-
-          <DatabaseConfigCard 
-            config={config.database}
-            connectionStatus={connectionStatus.database}
-            onConfigUpdate={updateDatabaseConfig}
-            onTestConnection={testDatabaseConnection}
-          />
 
           <SyncSettingsCard 
             config={config.sync}
@@ -360,11 +262,11 @@ const IntegrationSettings = () => {
             </Button>
             <Button 
               variant="outline" 
-              onClick={testOtherConnections}
+              onClick={testDatabaseConnection}
               className="flex items-center gap-2"
             >
               <TestTube className="h-4 w-4" />
-              Test Other Connections
+              Test Database Connection
             </Button>
           </div>
         </CardContent>
