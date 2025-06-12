@@ -1,4 +1,3 @@
-
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,10 +23,10 @@ const AMIBridgeCard = ({
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [lastEvent, setLastEvent] = useState<any>(null);
   
-  // Hardcoded AMI Bridge settings
+  // Updated AMI Bridge settings with PBX IP
   const bridgeConfig = {
-    serverUrl: 'http://localhost:3001',
-    websocketUrl: 'ws://localhost:8080',
+    serverUrl: 'http://192.168.0.5:3001',
+    websocketUrl: 'ws://192.168.0.5:8080',
     amiHost: '192.168.0.5',
     amiPort: '5038',
     amiUsername: 'crm-user',
@@ -206,8 +205,8 @@ const AMIBridgeCard = ({
         <div className="bg-gray-50 p-3 rounded-md text-sm">
           <p className="font-medium mb-2 text-green-600">✅ Bridge Configuration:</p>
           <pre className="text-xs">
-{`Bridge Server: localhost:3001
-WebSocket: localhost:8080
+{`Bridge Server: 192.168.0.5:3001
+WebSocket: 192.168.0.5:8080
 FreePBX: ${bridgeConfig.amiHost}:${bridgeConfig.amiPort}
 AMI User: ${bridgeConfig.amiUsername}`}
           </pre>
