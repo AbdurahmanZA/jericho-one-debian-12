@@ -1,3 +1,4 @@
+
 interface AMIEvent {
   event: string;
   privilege?: string;
@@ -52,7 +53,7 @@ export class FreePBXAMIClient {
       try {
         console.log(`🔗 [AMI] Initiating connection to ${this.host}:${this.port}`);
         console.log(`👤 [AMI] Username: ${this.username}`);
-        console.log(`🔑 [AMI] Password: ${this.password}`);
+        console.log(`🔑 [AMI] Password: ${this.password.substring(0, 8)}...`);
         
         // Since browsers can't make raw TCP connections, we'll simulate
         // the actual AMI protocol conversation for debugging
@@ -145,15 +146,15 @@ export class FreePBXAMIClient {
   private validateCredentials(): boolean {
     // Simulate actual credential validation with correct FreePBX credentials
     const expectedUsername = 'crm-user';
-    const expectedPassword = 'CRM_AMI_Pass';
+    const expectedPassword = '70159b4d49108ee8a6d1527edee2d8b50310358f';
     
     console.log(`🔍 [AMI] Validating credentials...`);
     console.log(`🔍 [AMI] Provided username: '${this.username}' (length: ${this.username.length})`);
     console.log(`🔍 [AMI] Expected username: '${expectedUsername}' (length: ${expectedUsername.length})`);
     console.log(`🔍 [AMI] Username match: ${this.username === expectedUsername}`);
     
-    console.log(`🔍 [AMI] Provided password: '${this.password}' (length: ${this.password.length})`);
-    console.log(`🔍 [AMI] Expected password: '${expectedPassword}' (length: ${expectedPassword.length})`);
+    console.log(`🔍 [AMI] Provided password: '${this.password.substring(0, 8)}...' (length: ${this.password.length})`);
+    console.log(`🔍 [AMI] Expected password: '${expectedPassword.substring(0, 8)}...' (length: ${expectedPassword.length})`);
     console.log(`🔍 [AMI] Password match: ${this.password === expectedPassword}`);
     
     return this.username === expectedUsername && this.password === expectedPassword;
