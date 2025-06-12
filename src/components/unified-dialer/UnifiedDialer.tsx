@@ -47,39 +47,55 @@ const UnifiedDialer = ({ onLeadCreated }: UnifiedDialerProps) => {
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [callStartTime, setCallStartTime] = useState<Date | null>(null);
 
-  // Real-time call timer
+  // Real-time call timer - starts immediately when call begins
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (activeCall && activeCall.status === 'connected') {
+    
+    if (activeCall && callStartTime) {
       interval = setInterval(() => {
-        const elapsed = Math.floor((Date.now() - activeCall.startTime.getTime()) / 1000);
+        const elapsed = Math.floor((Date.now() - callStartTime.getTime()) / 1000);
         const minutes = Math.floor(elapsed / 60);
         const seconds = elapsed % 60;
+        const newDuration = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        
+        console.log('📞 [UnifiedDialer] Updating call duration:', newDuration);
+        
         setActiveCall(prev => prev ? {
           ...prev,
-          duration: `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+          duration: newDuration
         } : null);
       }, 1000);
     }
-    return () => clearInterval(interval);
-  }, [activeCall]);
+    
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [activeCall, callStartTime]);
 
   // Listen for real AMI call events
   useEffect(() => {
-    if (callEvents.length > 0) {
+    if (callEvents.length > 0 && activeCall) {
       const latestEvent = callEvents[0];
-      console.log('Processing AMI event:', latestEvent);
+      console.log('📞 [UnifiedDialer] Processing AMI event:', latestEvent);
       
       // Handle hangup events to end active calls
-      if (latestEvent.event === 'Hangup' && activeCall) {
-        console.log('Call hangup detected, ending call');
+      if (latestEvent.event === 'Hangup') {
+        console.log('📞 [UnifiedDialer] Call hangup detected, ending call');
         endCall();
       }
       
-      // Handle call answer events
-      if (latestEvent.event === 'DialEnd' && latestEvent.dialstatus === 'ANSWER' && activeCall) {
-        setActiveCall(prev => prev ? { ...prev, status: 'connected', startTime: new Date() } : null);
+      // Handle call answer events - switch to connected status
+      if (latestEvent.event === 'DialEnd' && latestEvent.dialstatus === 'ANSWER') {
+        console.log('📞 [UnifiedDialer] Call answered, switching to connected');
+        setActiveCall(prev => prev ? { 
+          ...prev, 
+          status: 'connected'
+        } : null);
+        
         toast({
           title: "Call Connected",
           description: `Connected to ${activeCall.leadName}`,
@@ -117,16 +133,19 @@ const UnifiedDialer = ({ onLeadCreated }: UnifiedDialerProps) => {
       );
 
       if (success) {
+        const startTime = new Date();
         const newCall: ActiveCall = {
           id: `call_${Date.now()}`,
           leadName: contactName || 'Unknown Contact',
           phone: phoneNumber,
           duration: '00:00',
           status: 'ringing',
-          startTime: new Date(),
+          startTime: startTime,
         };
 
+        console.log('📞 [UnifiedDialer] Call initiated, starting timer');
         setActiveCall(newCall);
+        setCallStartTime(startTime); // Start the timer immediately
         setIsMinimized(false); // Expand when call starts
         
         toast({
@@ -159,7 +178,7 @@ const UnifiedDialer = ({ onLeadCreated }: UnifiedDialerProps) => {
     if (!activeCall) return;
 
     try {
-      // Record the call
+      // Record the call with final duration
       const currentUser = localStorage.getItem('current_user') || 'Unknown Agent';
       callRecordsService.addRecord({
         leadName: activeCall.leadName,
@@ -175,7 +194,10 @@ const UnifiedDialer = ({ onLeadCreated }: UnifiedDialerProps) => {
         leadId: activeCall.leadId
       });
 
+      console.log('📞 [UnifiedDialer] Call ended, final duration:', activeCall.duration);
+
       setActiveCall(null);
+      setCallStartTime(null); // Reset timer
       setIsRecording(false);
       setIsMuted(false);
       setPhoneNumber('');
@@ -270,7 +292,9 @@ const UnifiedDialer = ({ onLeadCreated }: UnifiedDialerProps) => {
                     <div className="text-sm text-gray-600">{activeCall.phone}</div>
                     <div className="flex items-center gap-2 mt-1">
                       <Clock className="h-3 w-3" />
-                      <span className="text-sm font-mono">{activeCall.duration}</span>
+                      <span className="text-sm font-mono font-bold text-green-700">
+                        {activeCall.duration}
+                      </span>
                       <Badge className={`text-xs ${
                         activeCall.status === 'connected' ? 'bg-green-100 text-green-800' :
                         activeCall.status === 'ringing' ? 'bg-blue-100 text-blue-800' :
