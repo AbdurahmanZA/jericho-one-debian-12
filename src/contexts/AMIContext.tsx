@@ -1,12 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { useAsteriskAMI } from '@/hooks/useAsteriskAMI';
-import { useAuth } from '@/contexts/AuthContext';
-
-interface AMIEvent {
-  event: string;
-  [key: string]: string | undefined;
-}
+import { amiBridgeClient } from '@/services/amiBridgeClient';
 
 interface AMIConfig {
   host: string;
@@ -15,160 +9,167 @@ interface AMIConfig {
   password: string;
 }
 
-interface PendingCall {
-  leadName: string;
-  phone: string;
-  leadId: number;
-  timestamp: number;
+interface AMIEvent {
+  event: string;
+  [key: string]: string | undefined;
 }
 
 interface AMIContextType {
   isConnected: boolean;
   isConnecting: boolean;
+  connectionError: string | null;
   lastEvent: AMIEvent | null;
   callEvents: AMIEvent[];
-  connectionError: string | null;
   config: AMIConfig;
-  pendingCall: PendingCall | null;
-  userExtension: string;
   updateConfig: (newConfig: AMIConfig) => void;
   connect: () => Promise<boolean>;
-  disconnect: () => void;
-  originateCall: (channel: string, extension: string, context?: string) => Promise<boolean>;
-  getActiveChannels: () => Promise<void>;
-  initiateCallFromLead: (leadName: string, phone: string, leadId: number) => void;
-  clearPendingCall: () => void;
+  disconnect: () => Promise<boolean>;
+  originateCall: (channel: string, extension: string, context?: string, callerID?: string) => Promise<boolean>;
 }
 
 const AMIContext = createContext<AMIContextType | undefined>(undefined);
+
+export const useAMIContext = () => {
+  const context = useContext(AMIContext);
+  if (!context) {
+    throw new Error('useAMIContext must be used within an AMIProvider');
+  }
+  return context;
+};
 
 interface AMIProviderProps {
   children: ReactNode;
 }
 
-export const AMIProvider = ({ children }: AMIProviderProps) => {
-  const { user } = useAuth();
-  
+export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
+  const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [lastEvent, setLastEvent] = useState<AMIEvent | null>(null);
+  const [callEvents, setCallEvents] = useState<AMIEvent[]>([]);
   const [config, setConfig] = useState<AMIConfig>({
-    host: '192.168.0.5',
-    port: '5038',
-    username: 'crm-user',
-    password: '70159b4d49108ee8a6d1527edee2d8b50310358f'
+    host: localStorage.getItem('ami_host') || '127.0.0.1',
+    port: localStorage.getItem('ami_port') || '5038',
+    username: localStorage.getItem('ami_username') || 'crm-user',
+    password: localStorage.getItem('ami_password') || ''
   });
 
-  const [pendingCall, setPendingCall] = useState<PendingCall | null>(null);
-  const [userExtension, setUserExtension] = useState<string>('1000');
-  const [hasAutoConnected, setHasAutoConnected] = useState<boolean>(false);
-
-  const amiHook = useAsteriskAMI(config);
-
-  // Auto-connect ONLY ONCE per user session - prevent reconnections on tab switches
   useEffect(() => {
-    if (user && !amiHook.isConnected && !amiHook.isConnecting && !hasAutoConnected) {
-      console.log(`🔄 [AMI] ONE-TIME auto-connect for user: ${user.name} (${user.email})`);
+    // Set up event listeners for AMI bridge
+    const handleEvent = (event: AMIEvent) => {
+      setLastEvent(event);
       
-      // Set user-specific extension based on user data
-      const extension = getUserExtension(user);
-      setUserExtension(extension);
-      localStorage.setItem('user_extension', extension);
-      
-      console.log(`📞 [AMI] Setting PJSIP extension for ${user.name}: PJSIP/${extension}`);
-      
-      // Auto-connect AMI ONCE
-      setHasAutoConnected(true);
-      amiHook.connect().then(success => {
-        if (success) {
-          console.log(`✅ [AMI] Auto-connected successfully for user: ${user.name} on extension PJSIP/${extension}`);
-        } else {
-          console.log(`❌ [AMI] Auto-connect failed for user: ${user.name}`);
-          setHasAutoConnected(false); // Allow retry if failed
-        }
-      });
-    }
-  }, [user, amiHook.isConnected, amiHook.isConnecting, hasAutoConnected]);
-
-  // Function to determine user extension based on user data
-  const getUserExtension = (user: any): string => {
-    if (user.extension) {
-      return user.extension;
-    }
-    
-    const extensionMap: { [key: string]: string } = {
-      '1': '1000', // Admin
-      '2': '1001', // Manager
-      '3': '1002', // Agent 1
-      '4': '1003', // Agent 2
-      'admin@abdurahman.co.za': '1000',
-      'manager@abdurahman.co.za': '1001',
-      'agent@abdurahman.co.za': '1002'
+      // Track call-related events
+      if (event.event && ['Newchannel', 'Hangup', 'DialBegin', 'DialEnd', 'Bridge'].includes(event.event)) {
+        setCallEvents(prev => [event, ...prev.slice(0, 9)]); // Keep last 10 events
+      }
     };
-    
-    return extensionMap[user.id] || extensionMap[user.email] || '1000';
-  };
+
+    const handleStatusChange = (connected: boolean) => {
+      setIsConnected(connected);
+      if (!connected) {
+        setConnectionError('Connection lost');
+      } else {
+        setConnectionError(null);
+      }
+    };
+
+    amiBridgeClient.onEvent(handleEvent);
+    amiBridgeClient.onStatusChange(handleStatusChange);
+
+    // Check initial status
+    amiBridgeClient.getStatus().then(status => {
+      setIsConnected(status.connected);
+    });
+
+    return () => {
+      amiBridgeClient.removeEventListener(handleEvent);
+      amiBridgeClient.removeStatusListener(handleStatusChange);
+    };
+  }, []);
 
   const updateConfig = (newConfig: AMIConfig) => {
     setConfig(newConfig);
+    // Save to localStorage (except password)
     localStorage.setItem('ami_host', newConfig.host);
     localStorage.setItem('ami_port', newConfig.port);
     localStorage.setItem('ami_username', newConfig.username);
-    if (newConfig.password) {
-      localStorage.setItem('ami_password', newConfig.password);
+  };
+
+  const connect = async (): Promise<boolean> => {
+    setIsConnecting(true);
+    setConnectionError(null);
+    
+    try {
+      const success = await amiBridgeClient.connect(config);
+      
+      if (success) {
+        setIsConnected(true);
+        setConnectionError(null);
+      } else {
+        setConnectionError('Failed to connect to AMI Bridge');
+      }
+      
+      return success;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown connection error';
+      setConnectionError(errorMessage);
+      setIsConnected(false);
+      return false;
+    } finally {
+      setIsConnecting(false);
     }
   };
 
-  const initiateCallFromLead = (leadName: string, phone: string, leadId: number) => {
-    console.log(`📞 [AMI] User ${user?.name} (PJSIP/${userExtension}) initiating REAL call to ${phone}`);
-    
-    setPendingCall({
-      leadName,
-      phone,
-      leadId,
-      timestamp: Date.now()
-    });
-  };
-
-  const clearPendingCall = () => {
-    setPendingCall(null);
-  };
-
-  // Enhanced originate call that uses PROPER PJSIP format
-  const originateCallWithUserExtension = async (targetPhone: string, context: string = 'from-internal'): Promise<boolean> => {
-    if (!amiHook.isConnected) {
-      console.error('❌ [AMI] Cannot originate call - AMI not connected');
+  const disconnect = async (): Promise<boolean> => {
+    try {
+      const success = await amiBridgeClient.disconnect();
+      setIsConnected(false);
+      setConnectionError(null);
+      setCallEvents([]);
+      setLastEvent(null);
+      return success;
+    } catch (error) {
+      console.error('Disconnect error:', error);
       return false;
     }
-
-    // ENSURE PROPER PJSIP CHANNEL FORMAT
-    const pjsipChannel = `PJSIP/${userExtension}`;
-    console.log(`📞 [AMI] REAL CALL: Originating from PJSIP extension ${pjsipChannel} to ${targetPhone}`);
-    console.log(`📞 [AMI] Call details: Channel=${pjsipChannel}, Exten=${targetPhone}, Context=${context}`);
-    
-    return await amiHook.originateCall(pjsipChannel, targetPhone, context);
   };
 
-  const value: AMIContextType = {
-    ...amiHook,
+  const originateCall = async (
+    channel: string, 
+    extension: string, 
+    context = 'from-internal', 
+    callerID?: string
+  ): Promise<boolean> => {
+    try {
+      return await amiBridgeClient.originateCall({
+        channel,
+        extension,
+        context,
+        callerID
+      });
+    } catch (error) {
+      console.error('Originate call error:', error);
+      return false;
+    }
+  };
+
+  const contextValue: AMIContextType = {
+    isConnected,
+    isConnecting,
+    connectionError,
+    lastEvent,
+    callEvents,
     config,
-    pendingCall,
-    userExtension,
     updateConfig,
-    initiateCallFromLead,
-    clearPendingCall,
-    // Override originateCall to use user's PJSIP extension
-    originateCall: originateCallWithUserExtension
+    connect,
+    disconnect,
+    originateCall
   };
 
   return (
-    <AMIContext.Provider value={value}>
+    <AMIContext.Provider value={contextValue}>
       {children}
     </AMIContext.Provider>
   );
-};
-
-export const useAMIContext = () => {
-  const context = useContext(AMIContext);
-  if (context === undefined) {
-    throw new Error('useAMIContext must be used within an AMIProvider');
-  }
-  return context;
 };
