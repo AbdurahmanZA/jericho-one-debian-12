@@ -67,12 +67,12 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
   
   const maxReconnectAttempts = 5;
   
-  // Updated configuration for AMI Bridge to FreePBX
+  // Updated configuration for AMI Bridge to FreePBX using admin credentials
   const [config, setConfig] = useState<AMIConfig>({
     host: '192.168.0.5',
     port: '5038',
-    username: 'crm-user',
-    password: '70159b4d49108ee8a6d1527edee2d8b50310358f'
+    username: 'admin',
+    password: 'amp111'
   });
 
   // Fix user extension assignment - use stored extension or default to 1000
@@ -197,7 +197,7 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
     setConnectionError(null);
     
     try {
-      console.log('[AMI Context] Connecting to AMI Bridge with config:', {
+      console.log('[AMI Context] Connecting to AMI Bridge with admin credentials:', {
         serverUrl: 'http://192.168.0.5:3001',
         amiHost: config.host,
         amiPort: config.port,
@@ -211,7 +211,7 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
         setIsConnected(true);
         setConnectionError(null);
         setReconnectAttempts(0);
-        console.log('[AMI Context] Successfully connected to AMI Bridge');
+        console.log('[AMI Context] Successfully connected to AMI Bridge with admin credentials');
       } else {
         setConnectionError('Failed to connect to AMI Bridge at 192.168.0.5:3001');
       }
