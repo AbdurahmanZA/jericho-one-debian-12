@@ -13,7 +13,7 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-const AppContent = () => {
+const AppRoutes = () => {
   const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
@@ -49,9 +49,9 @@ const App = () => (
     <TooltipProvider>
       <AuthProvider>
         <AMIProvider>
+          <AppRoutes />
           <Toaster />
           <Sonner />
-          <AppContent />
         </AMIProvider>
       </AuthProvider>
     </TooltipProvider>
