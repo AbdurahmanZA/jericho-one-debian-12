@@ -43,13 +43,13 @@ const AMIBridgeCard = ({
     config 
   } = useAMIContext();
   
-  // Add new events to logs when they come in
+  // Add new events to logs when they come in - limit to 30 lines
   React.useEffect(() => {
     if (lastEvent) {
       setBridgeLogs(prev => [{
         timestamp: new Date().toISOString(),
         event: lastEvent
-      }, ...prev.slice(0, 49)]); // Keep last 50 events
+      }, ...prev.slice(0, 29)]); // Keep last 30 events
     }
   }, [lastEvent]);
   
@@ -170,6 +170,17 @@ const AMIBridgeCard = ({
           </AlertDescription>
         </Alert>
 
+        {connectionError && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              <strong>Authentication Error Location:</strong> The password issue is between AMI Bridge ↔ FreePBX, not Jericho ↔ AMI Bridge.
+              <br />
+              Error: {connectionError}
+            </AlertDescription>
+          </Alert>
+        )}
+
         {(connectionError || reconnectAttempts > 0) && (
           <Alert variant={reconnectAttempts >= maxReconnectAttempts ? "destructive" : "default"}>
             <AlertTriangle className="h-4 w-4" />
@@ -237,7 +248,7 @@ Session-based: Disconnect on logout`}
             >
               <span className="text-sm text-muted-foreground flex items-center gap-2">
                 <FileText className="h-3 w-3" />
-                Bridge Event Logs ({bridgeLogs.length} events)
+                Bridge Event Logs ({bridgeLogs.length}/30 events)
               </span>
               <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${isLogOpen ? 'rotate-180' : ''}`} />
             </Button>
