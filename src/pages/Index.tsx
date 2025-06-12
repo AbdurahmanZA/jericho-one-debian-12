@@ -13,7 +13,7 @@ import { useAMIContext } from "@/contexts/AMIContext";
 
 const Index = () => {
   const { user } = useAuth();
-  const { connectAMI, isConnected } = useAMIContext();
+  const { connect, isConnected } = useAMIContext();
   const [activeTab, setActiveTab] = useState("leads");
 
   if (!user) return null;
@@ -24,9 +24,9 @@ const Index = () => {
   useEffect(() => {
     if (user && !isConnected) {
       console.log('Auto-connecting to AMI Bridge on login...');
-      connectAMI();
+      connect();
     }
-  }, [user, isConnected, connectAMI]);
+  }, [user, isConnected, connect]);
 
   const handleLeadCreated = (leadData: { name: string; phone: string; notes: string }) => {
     console.log('New lead created from call:', leadData);
