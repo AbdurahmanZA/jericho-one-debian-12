@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAMIContext } from "@/contexts/AMIContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { callRecordsService, CallRecord } from "@/services/callRecordsService";
 import CallDialer from "./call-center/CallDialer";
 import ActiveCallDisplay from "./call-center/ActiveCallDisplay";
@@ -23,14 +24,14 @@ interface ActiveCall {
 
 const CallCenter = ({ userRole }: CallCenterProps) => {
   const { toast } = useToast();
-  const { pendingCall, clearPendingCall } = useAMIContext();
+  const { user } = useAuth();
+  const { pendingCall, clearPendingCall, userExtension, isConnected } = useAMIContext();
   
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [callNotes, setCallNotes] = useState("");
   const [callOutcome, setCallOutcome] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [extension, setExtension] = useState(localStorage.getItem('user_extension') || '');
   const [callHistory, setCallHistory] = useState<CallRecord[]>([]);
 
   // Subscribe to call records service
@@ -45,10 +46,26 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
     return unsubscribe;
   }, []);
 
+  // Display AMI connection status and user extension info
+  useEffect(() => {
+    if (user && userExtension) {
+      console.log(`📞 [CallCenter] User ${user.name} assigned extension: ${userExtension}`);
+      console.log(`🔗 [CallCenter] AMI Connection Status: ${isConnected ? 'Connected' : 'Disconnected'}`);
+      
+      if (isConnected) {
+        toast({
+          title: "AMI Connected",
+          description: `Ready to make calls from extension ${userExtension}`,
+        });
+      }
+    }
+  }, [user, userExtension, isConnected, toast]);
+
   // Handle pending calls from Lead Management
   useEffect(() => {
     if (pendingCall && !activeCall) {
       console.log('Processing pending call from leads:', pendingCall);
+      console.log(`📞 [CallCenter] ${user?.name} (ext: ${userExtension}) calling ${pendingCall.phone}`);
       
       const newCall: ActiveCall = {
         id: `call_${pendingCall.timestamp}`,
@@ -65,7 +82,7 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
 
       toast({
         title: "Call from Lead Management",
-        description: `Calling ${pendingCall.leadName} at ${pendingCall.phone}`,
+        description: `Calling ${pendingCall.leadName} at ${pendingCall.phone} from extension ${userExtension}`,
       });
 
       // Simulate call connection after 2-4 seconds
@@ -83,7 +100,7 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
         });
       }, connectionDelay);
     }
-  }, [pendingCall, activeCall, clearPendingCall, toast]);
+  }, [pendingCall, activeCall, clearPendingCall, toast, user, userExtension]);
 
   // Real-time call timer
   useEffect(() => {
@@ -103,6 +120,7 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
   }, [activeCall]);
 
   const handleCallInitiated = (callData: ActiveCall) => {
+    console.log(`📞 [CallCenter] Call initiated by ${user?.name} from extension ${userExtension}`);
     setActiveCall(callData);
     
     // Simulate call connection after 2-4 seconds (random for realism)
@@ -234,6 +252,23 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
 
   return (
     <div className="space-y-6">
+      {/* AMI Status Display */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-medium text-blue-900">
+              Extension: {userExtension} | User: {user?.name}
+            </h3>
+            <p className="text-sm text-blue-700">
+              AMI Status: {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
+            </p>
+          </div>
+          <div className="text-sm text-blue-600">
+            Ready for PJSIP calls from extension {userExtension}
+          </div>
+        </div>
+      </div>
+
       <CallDialer 
         onCallInitiated={handleCallInitiated}
         onLeadCreated={handleLeadCreated}
