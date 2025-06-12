@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import CallDialer from "./call-center/CallDialer";
@@ -98,6 +97,25 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
     }, connectionDelay);
   };
 
+  const handleLeadCreated = (leadData: { name: string; phone: string; notes: string }) => {
+    console.log('New lead created from call:', leadData);
+    
+    // In a real application, this would save to the database
+    toast({
+      title: "Lead Created",
+      description: `New lead "${leadData.name}" has been added to the system.`,
+    });
+
+    // Send Discord notification if available
+    if ((window as any).sendDiscordNotification) {
+      (window as any).sendDiscordNotification(
+        leadData.name, 
+        'created', 
+        `New lead created from call to ${leadData.phone}`
+      );
+    }
+  };
+
   const endCall = async () => {
     if (!activeCall) return;
 
@@ -192,6 +210,7 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
     <div className="space-y-6">
       <CallDialer 
         onCallInitiated={handleCallInitiated}
+        onLeadCreated={handleLeadCreated}
         disabled={!!activeCall}
       />
 

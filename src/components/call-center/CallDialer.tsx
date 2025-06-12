@@ -1,10 +1,10 @@
-
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { Phone, PhoneCall, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -19,12 +19,19 @@ interface CallDialerProps {
     leadId?: string;
   }) => void;
   disabled: boolean;
+  onLeadCreated?: (leadData: {
+    name: string;
+    phone: string;
+    notes: string;
+  }) => void;
 }
 
-const CallDialer = ({ onCallInitiated, disabled }: CallDialerProps) => {
+const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProps) => {
   const { toast } = useToast();
   const [extension, setExtension] = useState(localStorage.getItem('user_extension') || '');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [contactName, setContactName] = useState('');
+  const [callNotes, setCallNotes] = useState('');
   const [callType, setCallType] = useState('manual');
   const [selectedLead, setSelectedLead] = useState('');
 
@@ -35,9 +42,28 @@ const CallDialer = ({ onCallInitiated, disabled }: CallDialerProps) => {
     { id: '3', name: 'Mike Davis', phone: '+1-555-0789', company: 'Global Systems' }
   ];
 
+  const createLeadFromCall = (name: string, phone: string, notes: string) => {
+    const newLead = {
+      name: name || 'Unknown Contact',
+      phone: phone,
+      notes: notes || 'Lead created from manual call'
+    };
+
+    if (onLeadCreated) {
+      onLeadCreated(newLead);
+    }
+
+    toast({
+      title: "Lead Created",
+      description: `New lead created for ${newLead.name}`,
+    });
+
+    return newLead;
+  };
+
   const initiateCall = async () => {
     let targetPhone = phoneNumber;
-    let targetName = 'Unknown Contact';
+    let targetName = contactName || 'Unknown Contact';
     let leadId: string | undefined;
 
     if (callType === 'lead' && selectedLead) {
@@ -47,6 +73,10 @@ const CallDialer = ({ onCallInitiated, disabled }: CallDialerProps) => {
         targetName = lead.name;
         leadId = lead.id;
       }
+    } else if (callType === 'manual' && phoneNumber) {
+      // For manual calls, create a new lead automatically
+      const newLead = createLeadFromCall(targetName, phoneNumber, callNotes);
+      leadId = `manual_${Date.now()}`;
     }
 
     if (!extension || !targetPhone) {
@@ -89,6 +119,8 @@ const CallDialer = ({ onCallInitiated, disabled }: CallDialerProps) => {
       // Clear form after successful call
       if (callType === 'manual') {
         setPhoneNumber('');
+        setContactName('');
+        setCallNotes('');
       }
       setSelectedLead('');
     } catch (error) {
@@ -133,15 +165,36 @@ const CallDialer = ({ onCallInitiated, disabled }: CallDialerProps) => {
         </div>
 
         {callType === 'manual' && (
-          <div>
-            <Label htmlFor="phone">Phone Number</Label>
-            <Input
-              id="phone"
-              value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
-              placeholder="e.g., +1234567890"
-            />
-          </div>
+          <>
+            <div>
+              <Label htmlFor="phone">Phone Number</Label>
+              <Input
+                id="phone"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                placeholder="e.g., +1234567890"
+              />
+            </div>
+            <div>
+              <Label htmlFor="contactName">Contact Name</Label>
+              <Input
+                id="contactName"
+                value={contactName}
+                onChange={(e) => setContactName(e.target.value)}
+                placeholder="Contact name (optional)"
+              />
+            </div>
+            <div>
+              <Label htmlFor="callNotes">Initial Notes</Label>
+              <Textarea
+                id="callNotes"
+                value={callNotes}
+                onChange={(e) => setCallNotes(e.target.value)}
+                placeholder="Notes about this contact..."
+                rows={3}
+              />
+            </div>
+          </>
         )}
 
         {callType === 'lead' && (

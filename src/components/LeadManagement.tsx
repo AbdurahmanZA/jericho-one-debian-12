@@ -17,7 +17,8 @@ import {
   MessageSquare,
   Calendar,
   AlertCircle,
-  Edit
+  Edit,
+  FileDown
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -221,6 +222,42 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
     }
   };
 
+  const downloadLeadsTemplate = () => {
+    const template = [
+      {
+        name: "John Smith",
+        company: "Example Corp",
+        phone: "+1-555-0123",
+        email: "john@example.com",
+        status: "new",
+        priority: "high",
+        source: "Website",
+        assignedAgent: "Agent Name",
+        notes: "Sample lead entry"
+      }
+    ];
+
+    const csvContent = [
+      "name,company,phone,email,status,priority,source,assignedAgent,notes",
+      template.map(lead => 
+        `"${lead.name}","${lead.company}","${lead.phone}","${lead.email}","${lead.status}","${lead.priority}","${lead.source}","${lead.assignedAgent}","${lead.notes}"`
+      ).join('\n')
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'leads_template.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
+
+    toast({
+      title: "Template Downloaded",
+      description: "Leads import template has been downloaded successfully.",
+    });
+  };
+
   const filteredLeads = leads.filter(lead =>
     lead.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     lead.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -254,10 +291,18 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
                   </Button>
                 </>
               )}
-              <Button variant="outline" className="flex items-center gap-2">
-                <Download className="h-4 w-4" />
-                Export
-              </Button>
+              {userRole !== "agent" && (
+                <Button variant="outline" className="flex items-center gap-2">
+                  <Download className="h-4 w-4" />
+                  Export
+                </Button>
+              )}
+              {userRole !== "agent" && (
+                <Button variant="outline" onClick={downloadLeadsTemplate} className="flex items-center gap-2">
+                  <FileDown className="h-4 w-4" />
+                  Download Template
+                </Button>
+              )}
             </div>
           </div>
         </CardHeader>
