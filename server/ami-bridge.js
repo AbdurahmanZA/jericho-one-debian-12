@@ -174,39 +174,84 @@ class AMIBridge extends EventEmitter {
   async getPJSIPEndpoints() {
     try {
       console.log('[AMI Bridge] Fetching PJSIP endpoints...');
-      const response = await this.sendAction({ Action: 'PJSIPShowEndpoints' });
       
-      // The response will trigger multiple events, we need to collect them
-      return new Promise((resolve) => {
+      // Send the PJSIPShowEndpoints action
+      const actionId = ++this.actionId;
+      const actionIdStr = actionId.toString();
+      
+      return new Promise((resolve, reject) => {
         const endpoints = [];
-        let collecting = true;
+        let collecting = false;
         
         const eventHandler = (event) => {
-          if (event.Event === 'EndpointList') {
-            endpoints.push({
-              objectName: event.ObjectName,
-              endpoint: event.ObjectName,
-              status: event.DeviceState || 'Unknown',
+          // Check if this is our action's response
+          if (event.ActionID === actionIdStr) {
+            if (event.Response === 'Success') {
+              collecting = true;
+              console.log('[AMI Bridge] Starting to collect PJSIP endpoints...');
+            } else if (event.Response === 'Error') {
+              this.removeListener('event', eventHandler);
+              console.error('[AMI Bridge] PJSIP query failed:', event.Message);
+              resolve([]);
+              return;
+            }
+          }
+          
+          // Collect endpoint data
+          if (collecting && event.Event === 'EndpointList') {
+            const endpoint = {
+              objectName: event.ObjectName || event.Endpoint || 'Unknown',
+              endpoint: event.ObjectName || event.Endpoint || 'Unknown',
+              status: event.DeviceState || event.Status || 'Unknown',
               contact: event.Contacts || 'Not Available'
-            });
-          } else if (event.Event === 'EndpointListComplete') {
-            collecting = false;
+            };
+            
+            // Extract just the extension number if it's in format like "1000/1000"
+            if (endpoint.endpoint.includes('/')) {
+              endpoint.endpoint = endpoint.endpoint.split('/')[0];
+            }
+            
+            endpoints.push(endpoint);
+            console.log('[AMI Bridge] Found endpoint:', endpoint);
+          } else if (collecting && event.Event === 'EndpointListComplete') {
             this.removeListener('event', eventHandler);
-            console.log(`[AMI Bridge] Found ${endpoints.length} PJSIP endpoints`);
+            console.log(`[AMI Bridge] Completed PJSIP endpoint collection: ${endpoints.length} endpoints found`);
             resolve(endpoints);
           }
         };
         
         this.on('event', eventHandler);
         
-        // Timeout after 5 seconds
+        // Send the action
+        const action = {
+          Action: 'PJSIPShowEndpoints',
+          ActionID: actionIdStr
+        };
+        
+        let message = '';
+        for (const [key, value] of Object.entries(action)) {
+          message += `${key}: ${value}\r\n`;
+        }
+        message += '\r\n';
+        
+        console.log('[AMI Bridge] Sending PJSIP query:', action);
+        
+        if (!this.socket || !this.isConnected) {
+          this.removeListener('event', eventHandler);
+          reject(new Error('Not connected to AMI'));
+          return;
+        }
+        
+        this.socket.write(message);
+        
+        // Timeout after 10 seconds
         setTimeout(() => {
-          if (collecting) {
+          if (this.listenerCount('event') > 0) {
             this.removeListener('event', eventHandler);
             console.log('[AMI Bridge] PJSIP endpoint query timeout');
             resolve(endpoints);
           }
-        }, 5000);
+        }, 10000);
       });
     } catch (error) {
       console.error('[AMI Bridge] Get PJSIP endpoints error:', error);
