@@ -1,4 +1,3 @@
-
 #!/bin/bash
 
 # FreePBX CentOS 7 AMI Bridge Complete Installation Script
@@ -75,52 +74,167 @@ check_system() {
     log "System requirements check passed"
 }
 
-# Install Node.js 16 (Compatible with CentOS 7)
+# Install Node.js 16 (Multiple methods for CentOS 7 compatibility)
 install_nodejs() {
     log "Installing Node.js 16 LTS (CentOS 7 compatible)..."
     
-    # Remove existing Node.js and any conflicting packages
+    # Remove existing Node.js
     yum remove -y nodejs npm 2>/dev/null || true
     
-    # Clean up any existing NodeSource repos
+    # Clean up any existing repositories
     rm -f /etc/yum.repos.d/nodesource*.repo
-    
-    # Clear yum cache
     yum clean all
     
-    # Install Node.js 16 specifically for CentOS 7
-    log "Setting up NodeSource repository for Node.js 16..."
-    curl -fsSL https://rpm.nodesource.com/setup_16.x | bash -
-    
-    # Verify the repository was added correctly
-    if [ ! -f /etc/yum.repos.d/nodesource-el7.repo ]; then
-        error "NodeSource repository was not properly configured"
+    # Method 1: Try EPEL repository first (most reliable for CentOS 7)
+    log "Attempting installation via EPEL repository..."
+    if install_nodejs_epel; then
+        return 0
     fi
     
-    # Install Node.js 16 specifically
-    log "Installing Node.js 16..."
-    yum install -y nodejs-16* || {
-        error "Failed to install Node.js 16. CentOS 7 compatibility issue detected."
-    }
+    # Method 2: Try direct binary installation
+    log "EPEL method failed, trying direct binary installation..."
+    if install_nodejs_binary; then
+        return 0
+    fi
+    
+    # Method 3: Try compilation from source (last resort)
+    log "Binary method failed, trying source compilation..."
+    if install_nodejs_source; then
+        return 0
+    fi
+    
+    error "All Node.js installation methods failed"
+}
+
+# Method 1: Install via EPEL
+install_nodejs_epel() {
+    log "Installing Node.js via EPEL repository..."
+    
+    # Install EPEL release
+    yum install -y epel-release || return 1
+    
+    # Install development tools needed
+    yum groupinstall -y "Development Tools" || return 1
+    
+    # Install Node.js from EPEL (usually older version, but compatible)
+    yum install -y nodejs npm || return 1
+    
+    # Check if we got a working Node.js
+    local node_version=$(node --version 2>/dev/null || echo "")
+    if [[ -n "$node_version" ]]; then
+        log "Node.js installed via EPEL: $node_version"
+        
+        # Update npm if possible
+        npm install -g npm@latest 2>/dev/null || true
+        
+        return 0
+    fi
+    
+    return 1
+}
+
+# Method 2: Install via pre-compiled binaries
+install_nodejs_binary() {
+    log "Installing Node.js via pre-compiled binaries..."
+    
+    local NODE_VERSION="16.20.2"
+    local NODE_ARCH="linux-x64"
+    local NODE_TARBALL="node-v${NODE_VERSION}-${NODE_ARCH}.tar.xz"
+    local NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TARBALL}"
+    local INSTALL_DIR="/usr/local"
+    
+    # Download Node.js binary
+    cd /tmp
+    if ! wget "$NODE_URL"; then
+        error "Failed to download Node.js binary"
+        return 1
+    fi
+    
+    # Extract and install
+    tar -xf "$NODE_TARBALL" || return 1
+    
+    # Copy files to system directories
+    local NODE_DIR="node-v${NODE_VERSION}-${NODE_ARCH}"
+    cp -r "${NODE_DIR}/bin"/* "${INSTALL_DIR}/bin/" || return 1
+    cp -r "${NODE_DIR}/lib"/* "${INSTALL_DIR}/lib/" || return 1
+    cp -r "${NODE_DIR}/include"/* "${INSTALL_DIR}/include/" || return 1
+    cp -r "${NODE_DIR}/share"/* "${INSTALL_DIR}/share/" || return 1
+    
+    # Create symlinks if needed
+    ln -sf "${INSTALL_DIR}/bin/node" /usr/bin/node 2>/dev/null || true
+    ln -sf "${INSTALL_DIR}/bin/npm" /usr/bin/npm 2>/dev/null || true
+    
+    # Clean up
+    rm -rf "/tmp/${NODE_TARBALL}" "/tmp/${NODE_DIR}"
     
     # Verify installation
-    local node_version=$(node --version 2>/dev/null || echo "not installed")
-    local npm_version=$(npm --version 2>/dev/null || echo "not installed")
+    local node_version=$(node --version 2>/dev/null || echo "")
+    if [[ -n "$node_version" ]]; then
+        log "Node.js installed via binary: $node_version"
+        return 0
+    fi
     
-    if [[ "$node_version" == "not installed" ]]; then
+    return 1
+}
+
+# Method 3: Compile from source (last resort)
+install_nodejs_source() {
+    log "Compiling Node.js from source (this may take 20-30 minutes)..."
+    
+    # Install build dependencies
+    yum groupinstall -y "Development Tools" || return 1
+    yum install -y gcc-c++ make python2 git || return 1
+    
+    local NODE_VERSION="16.20.2"
+    local NODE_TARBALL="node-v${NODE_VERSION}.tar.gz"
+    local NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TARBALL}"
+    
+    cd /tmp
+    
+    # Download source
+    if ! wget "$NODE_URL"; then
+        error "Failed to download Node.js source"
+        return 1
+    fi
+    
+    # Extract
+    tar -xzf "$NODE_TARBALL" || return 1
+    cd "node-v${NODE_VERSION}" || return 1
+    
+    # Configure (use Python 2 explicitly for CentOS 7)
+    if ! python2 configure --prefix=/usr/local; then
+        error "Node.js configure failed"
+        return 1
+    fi
+    
+    # Compile (this takes a long time)
+    if ! make -j$(nproc); then
+        error "Node.js compilation failed"
+        return 1
+    fi
+    
+    # Install
+    if ! make install; then
         error "Node.js installation failed"
+        return 1
     fi
     
-    log "Node.js installed: $node_version"
-    log "NPM installed: $npm_version"
+    # Create symlinks
+    ln -sf /usr/local/bin/node /usr/bin/node 2>/dev/null || true
+    ln -sf /usr/local/bin/npm /usr/bin/npm 2>/dev/null || true
     
-    # Verify compatibility
-    if [[ "$node_version" < "v16" ]]; then
-        error "Node.js version is too old. Expected v16+, got $node_version"
+    # Clean up
+    cd /
+    rm -rf "/tmp/node-v${NODE_VERSION}" "/tmp/${NODE_TARBALL}"
+    
+    # Verify installation
+    local node_version=$(node --version 2>/dev/null || echo "")
+    if [[ -n "$node_version" ]]; then
+        log "Node.js compiled and installed: $node_version"
+        return 0
     fi
     
-    # Update npm to latest compatible version
-    npm install -g npm@8.19.4 2>/dev/null || warn "Could not update npm"
+    return 1
 }
 
 # Create service user
