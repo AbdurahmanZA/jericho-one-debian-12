@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Phone, PhoneCall, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAMIContext } from "@/contexts/AMIContext";
 
 interface CallDialerProps {
   onCallInitiated: (callData: {
@@ -28,7 +30,8 @@ interface CallDialerProps {
 
 const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProps) => {
   const { toast } = useToast();
-  const [extension, setExtension] = useState(localStorage.getItem('user_extension') || '');
+  const { isConnected, originateCall } = useAMIContext();
+  const [extension, setExtension] = useState(localStorage.getItem('user_extension') || '1000');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [contactName, setContactName] = useState('');
   const [callNotes, setCallNotes] = useState('');
@@ -74,7 +77,6 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
         leadId = lead.id;
       }
     } else if (callType === 'manual' && phoneNumber) {
-      // For manual calls, create a new lead automatically
       const newLead = createLeadFromCall(targetName, phoneNumber, callNotes);
       leadId = `manual_${Date.now()}`;
     }
@@ -82,51 +84,70 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
     if (!extension || !targetPhone) {
       toast({
         title: "Missing Information",
-        description: "Please enter your extension and select a contact to call.",
+        description: "Please enter your extension and phone number to call.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!isConnected) {
+      toast({
+        title: "AMI Not Connected",
+        description: "Please connect to FreePBX AMI in Integration Settings first.",
         variant: "destructive"
       });
       return;
     }
 
     try {
-      // Save extension to localStorage
       localStorage.setItem('user_extension', extension);
 
-      // Simulate call initiation (in real implementation, this would call FreePBX API)
-      console.log('Initiating call:', {
-        extension,
-        phone: targetPhone,
-        leadName: targetName,
-        leadId
+      console.log('Initiating real AMI call:', {
+        channel: `PJSIP/${extension}`,
+        extension: targetPhone,
+        context: 'from-internal'
       });
 
-      const newCall = {
-        id: `call_${Date.now()}`,
-        leadName: targetName,
-        phone: targetPhone,
-        duration: '00:00',
-        status: 'ringing' as const,
-        startTime: new Date(),
-        leadId
-      };
+      // Use real AMI originate call
+      const success = await originateCall(
+        `PJSIP/${extension}`, // Channel for PJSIP extension
+        targetPhone,           // Number to call
+        'from-internal'        // Context
+      );
 
-      onCallInitiated(newCall);
-      toast({
-        title: "Call Initiated",
-        description: `Calling ${targetName} at ${targetPhone} from extension ${extension}`,
-      });
+      if (success) {
+        const newCall = {
+          id: `call_${Date.now()}`,
+          leadName: targetName,
+          phone: targetPhone,
+          duration: '00:00',
+          status: 'ringing' as const,
+          startTime: new Date(),
+          leadId
+        };
 
-      // Clear form after successful call
-      if (callType === 'manual') {
-        setPhoneNumber('');
-        setContactName('');
-        setCallNotes('');
+        onCallInitiated(newCall);
+        
+        toast({
+          title: "Call Initiated",
+          description: `Calling ${targetName} at ${targetPhone} from PJSIP extension ${extension}`,
+        });
+
+        // Clear form after successful call
+        if (callType === 'manual') {
+          setPhoneNumber('');
+          setContactName('');
+          setCallNotes('');
+        }
+        setSelectedLead('');
+      } else {
+        throw new Error('AMI originate call failed');
       }
-      setSelectedLead('');
     } catch (error) {
+      console.error('Call origination error:', error);
       toast({
         title: "Call Failed",
-        description: "Could not initiate call. Check your configuration.",
+        description: "Could not initiate call. Check AMI connection and extension configuration.",
         variant: "destructive"
       });
     }
@@ -138,17 +159,25 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
         <CardTitle className="flex items-center gap-2">
           <Phone className="h-5 w-5" />
           Call Dialer
+          {!isConnected && (
+            <span className="text-sm text-destructive font-normal">
+              (AMI Not Connected)
+            </span>
+          )}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div>
-          <Label htmlFor="extension">Your Extension</Label>
+          <Label htmlFor="extension">Your PJSIP Extension</Label>
           <Input
             id="extension"
             value={extension}
             onChange={(e) => setExtension(e.target.value)}
-            placeholder="e.g., 101"
+            placeholder="e.g., 1000"
           />
+          <p className="text-xs text-muted-foreground mt-1">
+            Extension must be registered in FreePBX PJSIP
+          </p>
         </div>
 
         <div>
@@ -220,12 +249,18 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
 
         <Button 
           onClick={initiateCall} 
-          disabled={disabled || !extension || (callType === 'manual' && !phoneNumber) || (callType === 'lead' && !selectedLead)}
+          disabled={disabled || !extension || (callType === 'manual' && !phoneNumber) || (callType === 'lead' && !selectedLead) || !isConnected}
           className="w-full"
         >
           <PhoneCall className="h-4 w-4 mr-2" />
-          Make Call
+          {isConnected ? 'Make Call via AMI' : 'AMI Not Connected'}
         </Button>
+        
+        {!isConnected && (
+          <p className="text-sm text-muted-foreground text-center">
+            Connect to FreePBX AMI in Integration Settings to make real calls
+          </p>
+        )}
       </CardContent>
     </Card>
   );
