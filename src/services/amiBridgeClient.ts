@@ -1,4 +1,3 @@
-
 interface AMIBridgeConfig {
   serverUrl: string;
   websocketUrl: string;
@@ -14,6 +13,13 @@ interface OriginateCallRequest {
 interface AMIEvent {
   event: string;
   [key: string]: string | undefined;
+}
+
+interface PJSIPPeer {
+  objectName: string;
+  endpoint: string;
+  status: string;
+  contact?: string;
 }
 
 class AMIBridgeClient {
@@ -114,6 +120,26 @@ class AMIBridgeClient {
     } catch (error) {
       console.error('[AMI Bridge Client] Get channels error:', error);
       return null;
+    }
+  }
+
+  async getPJSIPEndpoints(): Promise<PJSIPPeer[]> {
+    try {
+      console.log('[AMI Bridge Client] Fetching PJSIP endpoints');
+      
+      const response = await fetch(`${this.config.serverUrl}/api/ami/pjsip-endpoints`);
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log('[AMI Bridge Client] PJSIP endpoints:', result.data);
+        return result.data || [];
+      } else {
+        console.error('[AMI Bridge Client] Failed to get PJSIP endpoints:', result.error);
+        return [];
+      }
+    } catch (error) {
+      console.error('[AMI Bridge Client] Get PJSIP endpoints error:', error);
+      return [];
     }
   }
 

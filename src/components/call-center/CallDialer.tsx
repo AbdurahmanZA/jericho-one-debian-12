@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Phone, PhoneCall, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAMIContext } from "@/contexts/AMIContext";
+import ExtensionSelector from "./ExtensionSelector";
 
 interface CallDialerProps {
   onCallInitiated: (callData: {
@@ -31,7 +31,7 @@ interface CallDialerProps {
 const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProps) => {
   const { toast } = useToast();
   const { isConnected, originateCall } = useAMIContext();
-  const [extension, setExtension] = useState(localStorage.getItem('user_extension') || '1000');
+  const [extension, setExtension] = useState(localStorage.getItem('user_extension') || '');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [contactName, setContactName] = useState('');
   const [callNotes, setCallNotes] = useState('');
@@ -84,7 +84,7 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
     if (!extension || !targetPhone) {
       toast({
         title: "Missing Information",
-        description: "Please enter your extension and phone number to call.",
+        description: "Please select your extension and enter phone number to call.",
         variant: "destructive"
       });
       return;
@@ -167,18 +167,12 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div>
-          <Label htmlFor="extension">Your PJSIP Extension</Label>
-          <Input
-            id="extension"
-            value={extension}
-            onChange={(e) => setExtension(e.target.value)}
-            placeholder="e.g., 1000"
-          />
-          <p className="text-xs text-muted-foreground mt-1">
-            Extension must be registered in FreePBX PJSIP
-          </p>
-        </div>
+        <ExtensionSelector
+          value={extension}
+          onChange={setExtension}
+          disabled={disabled}
+          isConnected={isConnected}
+        />
 
         <div>
           <Label htmlFor="callType">Call Type</Label>
