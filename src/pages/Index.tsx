@@ -15,6 +15,8 @@ const Index = () => {
 
   if (!user) return null;
 
+  const canManageUsers = user.role === "Manager" || user.role === "Administrator";
+
   return (
     <div className="container mx-auto p-6">
       <div className="mb-8">
@@ -27,13 +29,13 @@ const Index = () => {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className={`grid w-full ${canManageUsers ? 'grid-cols-6' : 'grid-cols-5'}`}>
           <TabsTrigger value="leads">Lead Management</TabsTrigger>
           <TabsTrigger value="calls">Call Center</TabsTrigger>
           <TabsTrigger value="calendar">Callback Calendar</TabsTrigger>
           <TabsTrigger value="reports">Reports</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
-          {(user.role === "manager" || user.role === "administrator") && (
+          {canManageUsers && (
             <TabsTrigger value="users">User Management</TabsTrigger>
           )}
         </TabsList>
@@ -58,7 +60,7 @@ const Index = () => {
           <IntegrationSettings />
         </TabsContent>
 
-        {(user.role === "manager" || user.role === "administrator") && (
+        {canManageUsers && (
           <TabsContent value="users">
             <UserManagement />
           </TabsContent>

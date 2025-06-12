@@ -278,7 +278,7 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Compact Status Display */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
         <div className="flex items-center justify-between text-sm">
@@ -298,10 +298,10 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
         </div>
       </div>
 
-      {/* Main Layout - Agent Workspace */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        {/* Left Column - Dialer (1/4 width) */}
-        <div className="lg:col-span-1">
+      {/* Two Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Left Column - Call Dialer */}
+        <div className="space-y-4">
           <CallDialer 
             onCallInitiated={handleCallInitiated}
             onLeadCreated={handleLeadCreated}
@@ -309,32 +309,36 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
           />
         </div>
 
-        {/* Right Column - Main Work Area (3/4 width) */}
-        <div className="lg:col-span-3 space-y-4">
-          {activeCall && (
-            <ActiveCallDisplay
-              activeCall={activeCall}
-              isRecording={isRecording}
-              isMuted={isMuted}
-              onEndCall={endCall}
-              onToggleRecording={toggleRecording}
-              onToggleMute={toggleMute}
-              onHoldCall={holdCall}
-            />
-          )}
-
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <PostCallActions
-              callNotes={callNotes}
-              callOutcome={callOutcome}
-              onNotesChange={setCallNotes}
-              onOutcomeChange={setCallOutcome}
-              onSaveNotes={saveCallNotes}
-            />
-            
-            <CallHistory calls={callHistory} />
-          </div>
+        {/* Right Column - Post Call Actions */}
+        <div className="space-y-4">
+          <PostCallActions
+            callNotes={callNotes}
+            callOutcome={callOutcome}
+            onNotesChange={setCallNotes}
+            onOutcomeChange={setCallOutcome}
+            onSaveNotes={saveCallNotes}
+          />
         </div>
+      </div>
+
+      {/* Full Width Active Call Display */}
+      {activeCall && (
+        <div className="w-full">
+          <ActiveCallDisplay
+            activeCall={activeCall}
+            isRecording={isRecording}
+            isMuted={isMuted}
+            onEndCall={endCall}
+            onToggleRecording={toggleRecording}
+            onToggleMute={toggleMute}
+            onHoldCall={holdCall}
+          />
+        </div>
+      )}
+
+      {/* Full Width Call History */}
+      <div className="w-full">
+        <CallHistory calls={callHistory} />
       </div>
     </div>
   );
