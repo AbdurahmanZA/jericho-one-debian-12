@@ -58,15 +58,17 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
   const [lastEvent, setLastEvent] = useState<AMIEvent | null>(null);
   const [callEvents, setCallEvents] = useState<AMIEvent[]>([]);
   const [pendingCall, setPendingCall] = useState<PendingCall | null>(null);
+  
+  // Updated configuration for AMI Bridge to FreePBX
   const [config, setConfig] = useState<AMIConfig>({
-    host: localStorage.getItem('ami_host') || '127.0.0.1',
-    port: localStorage.getItem('ami_port') || '5038',
-    username: localStorage.getItem('ami_username') || 'crm-user',
-    password: localStorage.getItem('ami_password') || ''
+    host: '192.168.0.5',
+    port: '5038',
+    username: 'crm-user',
+    password: '70159b4d49108ee8a6d1527edee2d8b50310358f'
   });
 
-  // Generate user extension based on current user
-  const userExtension = localStorage.getItem('current_user_extension') || '1001';
+  // Fix user extension assignment - use stored extension or default to 1000
+  const userExtension = localStorage.getItem('user_extension') || '1000';
 
   useEffect(() => {
     // Set up event listeners for AMI bridge
@@ -82,7 +84,7 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
     const handleStatusChange = (connected: boolean) => {
       setIsConnected(connected);
       if (!connected) {
-        setConnectionError('Connection lost');
+        setConnectionError('Bridge connection lost');
       } else {
         setConnectionError(null);
       }
@@ -91,9 +93,13 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
     amiBridgeClient.onEvent(handleEvent);
     amiBridgeClient.onStatusChange(handleStatusChange);
 
-    // Check initial status
+    // Check initial status and auto-connect if bridge is available
     amiBridgeClient.getStatus().then(status => {
       setIsConnected(status.connected);
+      if (!status.connected) {
+        // Auto-connect to bridge on load
+        connect();
+      }
     });
 
     return () => {
@@ -104,10 +110,6 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
 
   const updateConfig = (newConfig: AMIConfig) => {
     setConfig(newConfig);
-    // Save to localStorage (except password)
-    localStorage.setItem('ami_host', newConfig.host);
-    localStorage.setItem('ami_port', newConfig.port);
-    localStorage.setItem('ami_username', newConfig.username);
   };
 
   const connect = async (): Promise<boolean> => {
@@ -115,13 +117,21 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
     setConnectionError(null);
     
     try {
+      console.log('[AMI Context] Connecting to AMI Bridge with config:', {
+        serverUrl: 'http://192.168.0.5:3001',
+        amiHost: config.host,
+        amiPort: config.port,
+        amiUser: config.username
+      });
+      
       const success = await amiBridgeClient.connect(config);
       
       if (success) {
         setIsConnected(true);
         setConnectionError(null);
+        console.log('[AMI Context] Successfully connected to AMI Bridge');
       } else {
-        setConnectionError('Failed to connect to AMI Bridge');
+        setConnectionError('Failed to connect to AMI Bridge at 192.168.0.5:3001');
       }
       
       return success;
@@ -129,6 +139,7 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown connection error';
       setConnectionError(errorMessage);
       setIsConnected(false);
+      console.error('[AMI Context] Connection error:', errorMessage);
       return false;
     } finally {
       setIsConnecting(false);
@@ -157,6 +168,14 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
     callerID?: string
   ): Promise<boolean> => {
     try {
+      console.log('[AMI Context] Originating call via bridge:', {
+        channel,
+        extension,
+        context,
+        callerID,
+        userExtension
+      });
+      
       return await amiBridgeClient.originateCall({
         channel,
         extension,

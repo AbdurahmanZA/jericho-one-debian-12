@@ -180,10 +180,10 @@ class AMIBridgeClient {
   }
 }
 
-// Create singleton instance
+// Create singleton instance with correct PBX IP
 export const amiBridgeClient = new AMIBridgeClient({
-  serverUrl: 'http://localhost:3001',
-  websocketUrl: 'ws://localhost:8080'
+  serverUrl: 'http://192.168.0.5:3001',
+  websocketUrl: 'ws://192.168.0.5:8080'
 });
 
 export default AMIBridgeClient;
