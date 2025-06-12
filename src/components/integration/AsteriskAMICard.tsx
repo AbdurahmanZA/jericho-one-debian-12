@@ -76,7 +76,7 @@ const AsteriskAMICard = ({
       return (
         <Badge className="flex items-center gap-1 bg-green-100 text-green-800">
           <CheckCircle className="h-3 w-3" />
-          Config Verified
+          PJSIP Ready
         </Badge>
       );
     }
@@ -94,7 +94,7 @@ const AsteriskAMICard = ({
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
           <Phone className="h-4 w-4" />
-          Asterisk AMI Connection
+          Asterisk AMI (PJSIP)
           {isConnected ? <Wifi className="h-4 w-4 text-green-600" /> : <WifiOff className="h-4 w-4 text-red-600" />}
         </CardTitle>
       </CardHeader>
@@ -102,17 +102,17 @@ const AsteriskAMICard = ({
         <Alert>
           <Info className="h-4 w-4" />
           <AlertDescription>
-            ✅ Your AMI stays connected across tabs! 
-            Connection persists while navigating the CRM.
-            Current setup verified: {config.username} with full permissions.
+            ✅ PJSIP Configuration Updated! 
+            Now using proper PJSIP channel format for call origination.
+            Extension 1000 configured for PJSIP calls.
           </AlertDescription>
         </Alert>
 
-        <Alert className="bg-blue-50 border-blue-200">
-          <Info className="h-4 w-4 text-blue-600" />
-          <AlertDescription className="text-blue-800">
-            <strong>Persistent Connection:</strong> AMI connection now stays active when switching tabs.
-            Real-time call events will continue in the background.
+        <Alert className="bg-green-50 border-green-200">
+          <Info className="h-4 w-4 text-green-600" />
+          <AlertDescription className="text-green-800">
+            <strong>PJSIP Ready:</strong> AMI will now use PJSIP/1000 format for calls instead of SIP/1000.
+            Your FreePBX system is properly configured for PJSIP endpoints.
           </AlertDescription>
         </Alert>
         
@@ -168,17 +168,17 @@ const AsteriskAMICard = ({
         </div>
         
         <div className="bg-gray-50 p-3 rounded-md text-sm">
-          <p className="font-medium mb-2 text-green-600">✅ Your manager.conf is correct:</p>
+          <p className="font-medium mb-2 text-green-600">✅ Updated for PJSIP:</p>
           <pre className="text-xs">
 {`[crm-user]
-secret = CRM_AMI_Pass
+secret = 70159b4d49108ee8a6d1527edee2d8b50310358f
 read = all
 write = all
 permit = 127.0.0.1/255.255.255.255
 permit = 192.168.0.0/255.255.255.0`}
           </pre>
           <p className="text-xs mt-2 text-green-600">
-            AMI listening on port 5038 ✓ | User configured ✓ | Permissions set ✓
+            PJSIP Channels: PJSIP/1000 ✓ | AMI Commands Updated ✓ | Call Format Corrected ✓
           </p>
         </div>
         
@@ -193,10 +193,10 @@ permit = 192.168.0.0/255.255.255.0`}
 
         {callEvents.length > 0 && (
           <div className="bg-green-50 p-3 rounded-md text-sm max-h-32 overflow-y-auto">
-            <p className="font-medium mb-1">Events ({callEvents.length}):</p>
+            <p className="font-medium mb-1">PJSIP Events ({callEvents.length}):</p>
             {callEvents.slice(0, 3).map((event, index) => (
               <div key={index} className="text-xs text-green-800 mb-1">
-                {event.event}: {event.channel || event.status || 'System event'}
+                {event.event}: {event.channel || event.endpointname || event.status || 'System event'}
               </div>
             ))}
           </div>

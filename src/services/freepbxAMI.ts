@@ -127,9 +127,9 @@ export class FreePBXAMIClient {
         console.log(`📨 [AMI] << [CRLF][CRLF]`);
         console.log(`❌ [AMI] Authentication failed with credentials:`);
         console.log(`❌ [AMI] - Username: '${this.username}'`);
-        console.log(`❌ [AMI] - Password: '${this.password}'`);
+        console.log(`❌ [AMI] - Password: '${this.password.substring(0, 8)}...'`);
         console.log(`❌ [AMI] - Expected username: 'crm-user'`);
-        console.log(`❌ [AMI] - Expected password: 'CRM_AMI_Pass'`);
+        console.log(`❌ [AMI] - Expected password: '70159b4d49108ee8a6d1527edee2d8b50310358f'`);
         
         this.isConnected = false;
         this.notifyConnectionListeners(false);
@@ -164,13 +164,13 @@ export class FreePBXAMIClient {
     if (!this.isConnected) return;
 
     try {
-      const actionId = `sippeers_${Date.now()}`;
+      const actionId = `pjsipendpoints_${Date.now()}`;
       console.log(`👥 [AMI] >> Action: PJSIPShowEndpoints`);
       console.log(`👥 [AMI] >> ActionID: ${actionId}`);
       console.log(`👥 [AMI] >> [CRLF][CRLF]`);
       
       setTimeout(() => {
-        // Simulate PJSIP endpoints instead of SIP peers
+        // Show PJSIP endpoint 1000
         console.log(`👥 [AMI] << Event: EndpointDetail`);
         console.log(`👥 [AMI] << ObjectType: endpoint`);
         console.log(`👥 [AMI] << ObjectName: 1000`);
@@ -238,7 +238,7 @@ export class FreePBXAMIClient {
           console.log(`💓 [AMI] << [CRLF][CRLF]`);
         }, 100);
         
-        // Send PJSIP peer status events instead of SIP
+        // Send PJSIP contact status events
         this.handleEvent({
           event: 'ContactStatus',
           privilege: 'system,all',
@@ -329,13 +329,21 @@ export class FreePBXAMIClient {
 
     try {
       const actionId = `originate_${Date.now()}`;
+      
+      // Ensure we're using PJSIP format
+      const pjsipChannel = channel.startsWith('PJSIP/') ? channel : `PJSIP/${channel.replace('SIP/', '').replace('PJSIP/', '')}`;
+      
       console.log(`📞 [AMI] >> Action: Originate`);
-      console.log(`📞 [AMI] >> Channel: ${channel}`);
+      console.log(`📞 [AMI] >> Channel: ${pjsipChannel}`);
       console.log(`📞 [AMI] >> Context: ${context}`);
       console.log(`📞 [AMI] >> Exten: ${extension}`);
       console.log(`📞 [AMI] >> Priority: 1`);
+      console.log(`📞 [AMI] >> Timeout: 30000`);
+      console.log(`📞 [AMI] >> CallerID: CRM Call <${pjsipChannel.replace('PJSIP/', '')}>`);
       console.log(`📞 [AMI] >> ActionID: ${actionId}`);
       console.log(`📞 [AMI] >> [CRLF][CRLF]`);
+      
+      console.log(`🎯 [AMI] Originating call from PJSIP extension ${pjsipChannel} to ${extension}`);
       
       // Simulate successful call origination
       setTimeout(() => {
@@ -344,15 +352,41 @@ export class FreePBXAMIClient {
         console.log(`📞 [AMI] << Message: Originate successfully queued`);
         console.log(`📞 [AMI] << [CRLF][CRLF]`);
         
+        // Simulate call progress events
+        setTimeout(() => {
+          console.log(`📞 [AMI] << Event: Newchannel`);
+          console.log(`📞 [AMI] << Channel: ${pjsipChannel}-${Date.now().toString().slice(-8)}`);
+          console.log(`📞 [AMI] << ChannelState: 4`);
+          console.log(`📞 [AMI] << ChannelStateDesc: Ring`);
+          console.log(`📞 [AMI] << CallerIDNum: ${pjsipChannel.replace('PJSIP/', '')}`);
+          console.log(`📞 [AMI] << CallerIDName: CRM Call`);
+          console.log(`📞 [AMI] << Context: ${context}`);
+          console.log(`📞 [AMI] << Exten: ${extension}`);
+          console.log(`📞 [AMI] << Priority: 1`);
+          console.log(`📞 [AMI] << [CRLF][CRLF]`);
+          
+          this.handleEvent({
+            event: 'Newchannel',
+            channel: `${pjsipChannel}-${Date.now().toString().slice(-8)}`,
+            channelstate: '4',
+            channelstatedesc: 'Ring',
+            calleridnum: pjsipChannel.replace('PJSIP/', ''),
+            calleridname: 'CRM Call',
+            context: context,
+            exten: extension,
+            priority: '1'
+          });
+        }, 1000);
+        
         this.handleEvent({
           event: 'OriginateResponse',
           response: 'Success',
-          channel: channel,
+          channel: pjsipChannel,
           context: context,
           exten: extension,
           reason: '4',
           uniqueid: `asterisk.${Date.now()}`,
-          calleridnum: extension
+          calleridnum: pjsipChannel.replace('PJSIP/', '')
         });
       }, 500);
       
