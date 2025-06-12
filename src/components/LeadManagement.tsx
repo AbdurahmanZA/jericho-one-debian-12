@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -45,7 +44,7 @@ interface Lead {
 
 const LeadManagement = ({ userRole }: LeadManagementProps) => {
   const { toast } = useToast();
-  const { originateCall, isConnected } = useAMIContext();
+  const { isConnected } = useAMIContext();
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedLeads, setSelectedLeads] = useState<number[]>([]);
@@ -170,59 +169,51 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
     }
 
     try {
-      console.log('Initiating call via unified dialer:', {
-        channel: `PJSIP/${user.extension}`,
-        extension: phone,
-        context: 'from-internal'
+      console.log('📞 [LeadManagement] Triggering call via UnifiedDialer:', {
+        leadName,
+        phone,
+        leadId
       });
 
-      const success = await originateCall(
-        `PJSIP/${user.extension}`,
-        phone,
-        'from-internal'
+      // Update lead status to show they've been contacted
+      setLeads(prevLeads => 
+        prevLeads.map(lead => 
+          lead.id === leadId 
+            ? { ...lead, status: 'contacted', lastContact: new Date().toISOString().split('T')[0] }
+            : lead
+        )
       );
 
-      if (success) {
-        // Update lead status to show they've been contacted
-        setLeads(prevLeads => 
-          prevLeads.map(lead => 
-            lead.id === leadId 
-              ? { ...lead, status: 'contacted', lastContact: new Date().toISOString().split('T')[0] }
-              : lead
-          )
-        );
-
-        // Create lead for unified dialer
-        const event = new CustomEvent('newLeadCreated', { 
-          detail: {
-            name: leadName,
-            phone: phone,
-            notes: `Lead contacted from Lead Management`
-          }
-        });
-        window.dispatchEvent(event);
-
-        toast({
-          title: "Call Initiated",
-          description: `Calling ${leadName} at ${phone} from extension ${user.extension}`,
-        });
-
-        // Send Discord notification
-        if ((window as any).sendDiscordNotification) {
-          (window as any).sendDiscordNotification(
-            leadName, 
-            'called', 
-            `Call initiated to ${phone}`
-          );
+      // Trigger UnifiedDialer call by dispatching a custom event
+      const dialerCallEvent = new CustomEvent('unifiedDialerCall', { 
+        detail: {
+          name: leadName,
+          phone: phone,
+          leadId: leadId.toString(),
+          notes: `Call initiated from Lead Management for ${leadName}`
         }
-      } else {
-        throw new Error('Failed to originate call');
+      });
+      window.dispatchEvent(dialerCallEvent);
+
+      toast({
+        title: "Call Initiated",
+        description: `Calling ${leadName} via UnifiedDialer`,
+      });
+
+      // Send Discord notification
+      if ((window as any).sendDiscordNotification) {
+        (window as any).sendDiscordNotification(
+          leadName, 
+          'called', 
+          `Call initiated to ${phone}`
+        );
       }
+
     } catch (error) {
-      console.error('Call origination error:', error);
+      console.error('Call initiation error:', error);
       toast({
         title: "Call Failed",
-        description: "Could not initiate call. Check AMI connection and extension configuration.",
+        description: "Could not initiate call through UnifiedDialer.",
         variant: "destructive"
       });
     }

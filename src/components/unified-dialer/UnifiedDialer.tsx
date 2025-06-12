@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,6 +48,24 @@ const UnifiedDialer = ({ onLeadCreated }: UnifiedDialerProps) => {
   const [isMuted, setIsMuted] = useState(false);
   const [callStartTime, setCallStartTime] = useState<Date | null>(null);
 
+  // Listen for calls from LeadManagement
+  useEffect(() => {
+    const handleUnifiedDialerCall = async (event: CustomEvent) => {
+      const callData = event.detail;
+      console.log('📞 [UnifiedDialer] Received call request from LeadManagement:', callData);
+      
+      // Populate dialer fields
+      setPhoneNumber(callData.phone);
+      setContactName(callData.name);
+      
+      // Automatically initiate the call
+      await performCall(callData.phone, callData.name, callData.leadId);
+    };
+
+    window.addEventListener('unifiedDialerCall', handleUnifiedDialerCall as EventListener);
+    return () => window.removeEventListener('unifiedDialerCall', handleUnifiedDialerCall as EventListener);
+  }, []);
+
   // Real-time call timer - starts immediately when call begins
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -82,6 +99,19 @@ const UnifiedDialer = ({ onLeadCreated }: UnifiedDialerProps) => {
       const latestEvent = callEvents[0];
       console.log('📞 [UnifiedDialer] Processing AMI event:', latestEvent);
       
+      // Check if this event relates to our user's extension
+      const userExtension = user?.extension;
+      const isUserChannel = userExtension && (
+        latestEvent.channel?.includes(`PJSIP/${userExtension}`) ||
+        latestEvent.destchannel?.includes(`PJSIP/${userExtension}`) ||
+        latestEvent.calleridnum === userExtension
+      );
+
+      if (!isUserChannel) {
+        console.log('📞 [UnifiedDialer] Event not for our extension, ignoring');
+        return;
+      }
+      
       // Handle hangup events to end active calls
       if (latestEvent.event === 'Hangup') {
         console.log('📞 [UnifiedDialer] Call hangup detected, ending call');
@@ -101,11 +131,20 @@ const UnifiedDialer = ({ onLeadCreated }: UnifiedDialerProps) => {
           description: `Connected to ${activeCall.leadName}`,
         });
       }
-    }
-  }, [callEvents, activeCall]);
 
-  const initiateCall = async () => {
-    if (!user?.extension || !phoneNumber) {
+      // Handle call failure events
+      if (latestEvent.event === 'DialEnd' && 
+          (latestEvent.dialstatus === 'BUSY' || 
+           latestEvent.dialstatus === 'NOANSWER' || 
+           latestEvent.dialstatus === 'CONGESTION')) {
+        console.log('📞 [UnifiedDialer] Call failed:', latestEvent.dialstatus);
+        endCall();
+      }
+    }
+  }, [callEvents, activeCall, user?.extension]);
+
+  const performCall = async (phone: string, name: string, leadId?: string) => {
+    if (!user?.extension || !phone) {
       toast({
         title: "Missing Information",
         description: !user?.extension 
@@ -126,9 +165,15 @@ const UnifiedDialer = ({ onLeadCreated }: UnifiedDialerProps) => {
     }
 
     try {
+      console.log('📞 [UnifiedDialer] Initiating call via AMI:', {
+        channel: `PJSIP/${user.extension}`,
+        extension: phone,
+        context: 'from-internal'
+      });
+
       const success = await originateCall(
         `PJSIP/${user.extension}`,
-        phoneNumber,
+        phone,
         'from-internal'
       );
 
@@ -136,11 +181,12 @@ const UnifiedDialer = ({ onLeadCreated }: UnifiedDialerProps) => {
         const startTime = new Date();
         const newCall: ActiveCall = {
           id: `call_${Date.now()}`,
-          leadName: contactName || 'Unknown Contact',
-          phone: phoneNumber,
+          leadName: name || 'Unknown Contact',
+          phone: phone,
           duration: '00:00',
           status: 'ringing',
           startTime: startTime,
+          leadId: leadId
         };
 
         console.log('📞 [UnifiedDialer] Call initiated, starting timer');
@@ -153,11 +199,11 @@ const UnifiedDialer = ({ onLeadCreated }: UnifiedDialerProps) => {
           description: `Calling ${newCall.leadName} from extension ${user.extension}`,
         });
 
-        // Create lead if needed
-        if (onLeadCreated && contactName) {
+        // Create lead if needed (for manual calls)
+        if (onLeadCreated && name && !leadId) {
           onLeadCreated({
-            name: contactName,
-            phone: phoneNumber,
+            name: name,
+            phone: phone,
             notes: 'Lead created from call'
           });
         }
@@ -172,6 +218,10 @@ const UnifiedDialer = ({ onLeadCreated }: UnifiedDialerProps) => {
         variant: "destructive"
       });
     }
+  };
+
+  const initiateCall = async () => {
+    await performCall(phoneNumber, contactName);
   };
 
   const endCall = async () => {
