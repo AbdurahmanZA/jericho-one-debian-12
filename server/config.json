@@ -1,0 +1,31 @@
+
+{
+  "ami": {
+    "host": "127.0.0.1",
+    "port": 5038,
+    "username": "admin",
+    "password": "amp111"
+  },
+  "server": {
+    "port": 3001,
+    "websocketPort": 8080,
+    "host": "0.0.0.0"
+  },
+  "security": {
+    "allowedOrigins": [
+      "http://localhost:5173", 
+      "http://192.168.0.132", 
+      "http://192.168.0.132:80",
+      "http://192.168.0.132/crm",
+      "http://192.168.0.132:3000",
+      "*"
+    ],
+    "corsEnabled": true,
+    "apiKey": "your-api-key-here"
+  },
+  "logging": {
+    "level": "debug",
+    "enableConsole": true,
+    "enableFile": true
+  }
+}
