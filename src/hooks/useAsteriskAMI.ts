@@ -1,6 +1,5 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
-import AsteriskAMIClient from '../services/asteriskAMI';
+import FreePBXAMIClient from '../services/freepbxAMI';
 
 interface AMIEvent {
   event: string;
@@ -21,7 +20,7 @@ export const useAsteriskAMI = (config: AMIConfig) => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [callEvents, setCallEvents] = useState<AMIEvent[]>([]);
   
-  const clientRef = useRef<AsteriskAMIClient | null>(null);
+  const clientRef = useRef<FreePBXAMIClient | null>(null);
 
   const handleEvent = useCallback((event: AMIEvent) => {
     console.log('AMI Event:', event);
@@ -54,8 +53,8 @@ export const useAsteriskAMI = (config: AMIConfig) => {
         clientRef.current.disconnect();
       }
 
-      // Create new client
-      clientRef.current = new AsteriskAMIClient(
+      // Create new FreePBX-specific client
+      clientRef.current = new FreePBXAMIClient(
         config.host,
         config.port,
         config.username,
@@ -70,15 +69,15 @@ export const useAsteriskAMI = (config: AMIConfig) => {
       const success = await clientRef.current.connect();
       
       if (success) {
-        console.log('AMI connection established successfully');
+        console.log('FreePBX AMI connection established successfully');
         return true;
       } else {
-        throw new Error('Failed to establish AMI connection');
+        throw new Error('Failed to establish FreePBX AMI connection');
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown connection error';
       setConnectionError(errorMessage);
-      console.error('AMI connection error:', errorMessage);
+      console.error('FreePBX AMI connection error:', errorMessage);
       return false;
     } finally {
       setIsConnecting(false);
@@ -104,6 +103,11 @@ export const useAsteriskAMI = (config: AMIConfig) => {
     await clientRef.current.getActiveChannels();
   }, []);
 
+  const getSIPPeers = useCallback(async (): Promise<void> => {
+    if (!clientRef.current) return;
+    await clientRef.current.getSIPPeers();
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -120,6 +124,7 @@ export const useAsteriskAMI = (config: AMIConfig) => {
     connect,
     disconnect,
     originateCall,
-    getActiveChannels
+    getActiveChannels,
+    getSIPPeers
   };
 };

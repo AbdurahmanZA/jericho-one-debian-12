@@ -8,6 +8,7 @@ import AsteriskAMICard from "./integration/AsteriskAMICard";
 import FreePBXAPICard from "./integration/FreePBXAPICard";
 import DatabaseConfigCard from "./integration/DatabaseConfigCard";
 import IntegrationLogsCard from "./integration/IntegrationLogsCard";
+import APILogsCard from "./integration/APILogsCard";
 import SyncSettingsCard from "./integration/SyncSettingsCard";
 import SecuritySettingsCard from "./integration/SecuritySettingsCard";
 
@@ -21,6 +22,16 @@ interface LogEntry {
   timestamp: string;
   type: 'info' | 'success' | 'warning' | 'error';
   message: string;
+}
+
+interface APILogEntry {
+  timestamp: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  endpoint: string;
+  method: string;
+  status?: number;
+  message: string;
+  responseTime?: number;
 }
 
 interface IntegrationConfig {
@@ -75,6 +86,25 @@ const IntegrationSettings = () => {
       timestamp: new Date(Date.now() - 120000).toISOString(),
       type: 'success',
       message: 'Persistent connection system enabled'
+    }
+  ]);
+
+  const [apiLogs, setApiLogs] = useState<APILogEntry[]>([
+    {
+      timestamp: new Date().toISOString(),
+      type: 'info',
+      endpoint: '/admin/api.php',
+      method: 'POST',
+      message: 'API integration system initialized'
+    },
+    {
+      timestamp: new Date(Date.now() - 30000).toISOString(),
+      type: 'warning',
+      endpoint: '/admin/api.php',
+      method: 'POST',
+      status: 401,
+      message: 'Authentication required for FreePBX API',
+      responseTime: 245
     }
   ]);
 
@@ -157,9 +187,15 @@ const IntegrationSettings = () => {
     setConnectionStatus(prev => ({ ...prev, freepbxAPI: 'testing' }));
     addLogEntry('info', `Testing FreePBX API connection to ${config.freepbxAPI.host}:${config.freepbxAPI.port}`);
     
+    const startTime = Date.now();
     try {
       const protocol = config.freepbxAPI.port === '443' ? 'https' : 'http';
-      const response = await fetch(`${protocol}://${config.freepbxAPI.host}:${config.freepbxAPI.port}/admin/api.php`, {
+      const endpoint = '/admin/api.php';
+      const url = `${protocol}://${config.freepbxAPI.host}:${config.freepbxAPI.port}${endpoint}`;
+      
+      addAPILogEntry('info', endpoint, 'POST', `Attempting connection to ${url}`);
+      
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -171,9 +207,12 @@ const IntegrationSettings = () => {
         })
       });
 
+      const responseTime = Date.now() - startTime;
+
       if (response.ok) {
         setConnectionStatus(prev => ({ ...prev, freepbxAPI: 'connected' }));
         addLogEntry('success', 'FreePBX API connection successful');
+        addAPILogEntry('success', endpoint, 'POST', 'FreePBX API connection successful', response.status, responseTime);
         toast({
           title: "FreePBX API Connected",
           description: "Successfully connected to FreePBX web interface.",
@@ -183,9 +222,11 @@ const IntegrationSettings = () => {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
     } catch (error) {
+      const responseTime = Date.now() - startTime;
       setConnectionStatus(prev => ({ ...prev, freepbxAPI: 'disconnected' }));
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLogEntry('error', `FreePBX API connection failed: ${errorMessage}`);
+      addAPILogEntry('error', '/admin/api.php', 'POST', errorMessage, undefined, responseTime);
       toast({
         title: "FreePBX API Connection Failed",
         description: "Check FreePBX web interface and API settings.",
@@ -199,8 +240,12 @@ const IntegrationSettings = () => {
     setConnectionStatus(prev => ({ ...prev, database: 'testing' }));
     addLogEntry('info', `Testing database connection to ${config.database.host}:${config.database.port}`);
     
+    const startTime = Date.now();
     try {
-      const response = await fetch('/api/test-database', {
+      const endpoint = '/api/test-database';
+      addAPILogEntry('info', endpoint, 'POST', `Testing database connection to ${config.database.host}:${config.database.port}`);
+      
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -214,9 +259,12 @@ const IntegrationSettings = () => {
         })
       });
 
+      const responseTime = Date.now() - startTime;
+
       if (response.ok) {
         setConnectionStatus(prev => ({ ...prev, database: 'connected' }));
         addLogEntry('success', 'Database connection successful');
+        addAPILogEntry('success', endpoint, 'POST', 'Database connection successful', response.status, responseTime);
         toast({
           title: "Database Connected",
           description: "Successfully connected to CRM database.",
@@ -226,9 +274,11 @@ const IntegrationSettings = () => {
         throw new Error(`HTTP ${response.status}: Database connection failed`);
       }
     } catch (error) {
+      const responseTime = Date.now() - startTime;
       setConnectionStatus(prev => ({ ...prev, database: 'disconnected' }));
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLogEntry('error', `Database connection failed: ${errorMessage}`);
+      addAPILogEntry('error', '/api/test-database', 'POST', errorMessage, undefined, responseTime);
       toast({
         title: "Database Connection Failed",
         description: "Could not connect to database. Check your settings.",
@@ -291,6 +341,23 @@ const IntegrationSettings = () => {
     setIntegrationLogs([]);
   };
 
+  const addAPILogEntry = (type: APILogEntry['type'], endpoint: string, method: string, message: string, status?: number, responseTime?: number) => {
+    const newLog: APILogEntry = {
+      timestamp: new Date().toISOString(),
+      type,
+      endpoint,
+      method,
+      message,
+      status,
+      responseTime
+    };
+    setApiLogs(prev => [newLog, ...prev.slice(0, 49)]); // Keep last 50 logs
+  };
+
+  const clearAPILogs = () => {
+    setApiLogs([]);
+  };
+
   const handleAMIConnectionStatusChange = (status: 'connected' | 'disconnected' | 'testing') => {
     setConnectionStatus(prev => ({ ...prev, ami: status }));
     
@@ -332,6 +399,11 @@ const IntegrationSettings = () => {
               onClearLogs={clearLogs}
             />
           </div>
+
+          <APILogsCard 
+            logs={apiLogs}
+            onClearLogs={clearAPILogs}
+          />
 
           <DatabaseConfigCard 
             config={config.database}
