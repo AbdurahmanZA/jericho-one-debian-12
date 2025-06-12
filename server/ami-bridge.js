@@ -78,18 +78,24 @@ class AMIBridge extends EventEmitter {
       }
       message += '\r\n';
 
-      this.pendingActions.set(actionId.toString(), { resolve, reject, timestamp: Date.now() });
+      this.pendingActions.set(actionId.toString(), { 
+        resolve, 
+        reject, 
+        timestamp: Date.now(),
+        action: action.Action
+      });
 
-      console.log('[AMI Bridge] Sending action:', action);
+      console.log('[AMI Bridge] Sending action:', action.Action, 'ID:', actionId);
       this.socket.write(message);
 
-      // Timeout after 10 seconds
+      // Timeout after 15 seconds for PJSIP queries, 10 seconds for others
+      const timeout = action.Action === 'PJSIPShowEndpoints' ? 15000 : 10000;
       setTimeout(() => {
         if (this.pendingActions.has(actionId.toString())) {
           this.pendingActions.delete(actionId.toString());
           reject(new Error('Action timeout'));
         }
-      }, 10000);
+      }, timeout);
     });
   }
 
@@ -125,16 +131,36 @@ class AMIBridge extends EventEmitter {
   }
 
   handleMessage(message) {
-    console.log('[AMI Bridge] Received message:', message);
+    console.log('[AMI Bridge] Received message type:', message.Event || message.Response || 'Unknown');
 
-    // Handle action responses
+    // Handle action responses first
     if (message.ActionID && this.pendingActions.has(message.ActionID)) {
       const pending = this.pendingActions.get(message.ActionID);
+      
+      // For PJSIP endpoints, we need to handle the response differently
+      if (message.Response === 'Success' && pending.action === 'PJSIPShowEndpoints') {
+        // Don't resolve immediately, wait for EndpointList events
+        console.log('[AMI Bridge] PJSIP query accepted, waiting for endpoint data...');
+        return;
+      }
+      
       this.pendingActions.delete(message.ActionID);
       pending.resolve(message);
+      return;
     }
 
-    // Emit all events for real-time updates
+    // Handle PJSIP-specific events
+    if (message.Event === 'EndpointList') {
+      this.emit('pjsip_endpoint_data', message);
+      return;
+    }
+    
+    if (message.Event === 'EndpointListComplete') {
+      this.emit('pjsip_endpoint_complete', message);
+      return;
+    }
+
+    // Emit regular events for real-time updates
     if (message.Event) {
       this.emit('event', message);
     }
@@ -185,13 +211,15 @@ class AMIBridge extends EventEmitter {
         const timeoutId = setTimeout(() => {
           this.removeAllListeners('pjsip_endpoint_data');
           this.removeAllListeners('pjsip_endpoint_complete');
-          console.log('[AMI Bridge] PJSIP endpoint query timeout');
+          console.log('[AMI Bridge] PJSIP endpoint query timeout - returning found endpoints');
           resolve(endpoints);
         }, 15000);
         
         // Handle individual endpoint data
         const dataHandler = (data) => {
           if (data.ActionID === actionIdStr) {
+            console.log('[AMI Bridge] Processing endpoint data:', data);
+            
             // Parse the endpoint data from the response
             const endpointName = data.ObjectName || data.Endpoint;
             if (endpointName && endpointName !== 'Unknown') {
@@ -204,7 +232,7 @@ class AMIBridge extends EventEmitter {
               const endpoint = {
                 objectName: endpointName,
                 endpoint: extensionNumber,
-                status: data.DeviceState || data.State || 'Unknown',
+                status: data.DeviceState || data.State || 'Available',
                 contact: data.Contacts || 'Not Available'
               };
               
@@ -244,88 +272,13 @@ class AMIBridge extends EventEmitter {
         }
         message += '\r\n';
         
-        console.log('[AMI Bridge] Sending PJSIP query');
+        console.log('[AMI Bridge] Sending PJSIP query with ActionID:', actionIdStr);
         this.socket.write(message);
       });
     } catch (error) {
       console.error('[AMI Bridge] Get PJSIP endpoints error:', error);
       return [];
     }
-  }
-
-  // Override handleMessage to properly route PJSIP events
-  handleMessage(message) {
-    console.log('[AMI Bridge] Received message type:', message.Event || message.Response || 'Unknown');
-
-    // Handle action responses first
-    if (message.ActionID && this.pendingActions.has(message.ActionID)) {
-      const pending = this.pendingActions.get(message.ActionID);
-      
-      // For PJSIP endpoints, we need to handle the response differently
-      if (message.Response === 'Success' && pending.action === 'PJSIPShowEndpoints') {
-        // Don't resolve immediately, wait for EndpointList events
-        console.log('[AMI Bridge] PJSIP query accepted, waiting for endpoint data...');
-        return;
-      }
-      
-      this.pendingActions.delete(message.ActionID);
-      pending.resolve(message);
-      return;
-    }
-
-    // Handle PJSIP-specific events
-    if (message.Event === 'EndpointList') {
-      this.emit('pjsip_endpoint_data', message);
-      return;
-    }
-    
-    if (message.Event === 'EndpointListComplete') {
-      this.emit('pjsip_endpoint_complete', message);
-      return;
-    }
-
-    // Emit regular events for real-time updates
-    if (message.Event) {
-      this.emit('event', message);
-    }
-  }
-
-  // Override sendAction to track action types
-  sendAction(action) {
-    return new Promise((resolve, reject) => {
-      if (!this.socket || !this.isConnected) {
-        reject(new Error('Not connected to AMI'));
-        return;
-      }
-
-      const actionId = ++this.actionId;
-      action.ActionID = actionId.toString();
-
-      let message = '';
-      for (const [key, value] of Object.entries(action)) {
-        message += `${key}: ${value}\r\n`;
-      }
-      message += '\r\n';
-
-      this.pendingActions.set(actionId.toString(), { 
-        resolve, 
-        reject, 
-        timestamp: Date.now(),
-        action: action.Action
-      });
-
-      console.log('[AMI Bridge] Sending action:', action.Action, 'ID:', actionId);
-      this.socket.write(message);
-
-      // Timeout after 15 seconds for PJSIP queries, 10 seconds for others
-      const timeout = action.Action === 'PJSIPShowEndpoints' ? 15000 : 10000;
-      setTimeout(() => {
-        if (this.pendingActions.has(actionId.toString())) {
-          this.pendingActions.delete(actionId.toString());
-          reject(new Error('Action timeout'));
-        }
-      }, timeout);
-    });
   }
 
   disconnect() {
@@ -384,7 +337,10 @@ app.post('/api/ami/connect', async (req, res) => {
   try {
     const { host, port, username, password } = req.body;
     
+    console.log(`[API] Connecting to AMI: ${host}:${port} with user ${username}`);
+    
     if (amiBridge) {
+      console.log('[API] Disconnecting existing AMI bridge');
       amiBridge.disconnect();
     }
 
@@ -392,14 +348,17 @@ app.post('/api/ami/connect', async (req, res) => {
     
     await amiBridge.connect();
     
+    console.log('[API] AMI Bridge connected successfully');
     res.json({ success: true, message: 'Connected to AMI successfully' });
   } catch (error) {
+    console.error('[API] AMI connection failed:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 app.post('/api/ami/disconnect', (req, res) => {
   if (amiBridge) {
+    console.log('[API] Disconnecting AMI bridge');
     amiBridge.disconnect();
     amiBridge = null;
   }
@@ -407,10 +366,12 @@ app.post('/api/ami/disconnect', (req, res) => {
 });
 
 app.get('/api/ami/status', (req, res) => {
-  res.json({
+  const status = {
     connected: amiBridge ? amiBridge.isConnected : false,
     timestamp: new Date().toISOString()
-  });
+  };
+  console.log('[API] Status check:', status);
+  res.json(status);
 });
 
 app.post('/api/ami/originate', async (req, res) => {
@@ -435,6 +396,7 @@ app.post('/api/ami/originate', async (req, res) => {
       details: { channel, extension, context }
     });
   } catch (error) {
+    console.error('[API] Originate call error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -455,11 +417,14 @@ app.get('/api/ami/channels', async (req, res) => {
 app.get('/api/ami/pjsip-endpoints', async (req, res) => {
   try {
     if (!amiBridge || !amiBridge.isConnected) {
+      console.log('[API] PJSIP endpoints request - AMI not connected');
       return res.status(400).json({ success: false, error: 'Not connected to AMI' });
     }
 
-    console.log('[API] Fetching PJSIP endpoints');
+    console.log('[API] Fetching PJSIP endpoints via AMI');
     const endpoints = await amiBridge.getPJSIPEndpoints();
+    
+    console.log(`[API] Found ${endpoints.length} PJSIP endpoints:`, endpoints);
     
     res.json({ 
       success: true, 
@@ -467,6 +432,7 @@ app.get('/api/ami/pjsip-endpoints', async (req, res) => {
       message: `Found ${endpoints.length} PJSIP endpoints`
     });
   } catch (error) {
+    console.error('[API] PJSIP endpoints error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
