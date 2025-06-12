@@ -43,15 +43,18 @@ AMI_PASSWORD="$(openssl rand -base64 32)"
 
 log "Starting FreePBX AMI Bridge installation for CentOS 7"
 
-# Install Node.js 18 (LTS)
+# Install Node.js 16 (Compatible with CentOS 7)
 install_nodejs() {
-    log "Installing Node.js 18..."
+    log "Installing Node.js 16 LTS (CentOS 7 compatible)..."
     
     # Remove existing Node.js
     yum remove -y nodejs npm 2>/dev/null || true
     
-    # Install Node.js 18 from NodeSource
-    curl -fsSL https://rpm.nodesource.com/setup_18.x | bash -
+    # Clean up any existing NodeSource repos
+    rm -f /etc/yum.repos.d/nodesource*.repo
+    
+    # Install Node.js 16 from NodeSource (compatible with CentOS 7)
+    curl -fsSL https://rpm.nodesource.com/setup_16.x | bash -
     yum install -y nodejs
     
     # Verify installation
@@ -59,6 +62,12 @@ install_nodejs() {
     NPM_VERSION=$(npm --version)
     log "Node.js installed: $NODE_VERSION"
     log "NPM installed: $NPM_VERSION"
+    
+    # Verify compatibility
+    if [[ "$NODE_VERSION" < "v16" ]]; then
+        error "Node.js version is too old. Expected v16+, got $NODE_VERSION"
+        exit 1
+    fi
 }
 
 # Create service user
@@ -81,7 +90,7 @@ create_application() {
     mkdir -p "$AMI_BRIDGE_DIR"
     cd "$AMI_BRIDGE_DIR"
     
-    # Create package.json
+    # Create package.json with Node 16 compatible dependencies
     cat > package.json << 'EOF'
 {
   "name": "freepbx-ami-bridge",
@@ -92,20 +101,23 @@ create_application() {
     "start": "node ami-bridge.js",
     "dev": "nodemon ami-bridge.js"
   },
+  "engines": {
+    "node": ">=16.0.0"
+  },
   "dependencies": {
     "express": "^4.18.2",
-    "ws": "^8.14.2",
+    "ws": "^8.13.0",
     "cors": "^2.8.5"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "nodemon": "^2.0.22"
   }
 }
 EOF
 
     # Install dependencies
     log "Installing Node.js dependencies..."
-    npm install
+    npm install --production
 
     # Create main application file
     cat > ami-bridge.js << 'EOF'
@@ -128,6 +140,7 @@ class AMIBridge extends EventEmitter {
     this.buffer = '';
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
+    this.reconnectTimeout = null;
   }
 
   connect() {
@@ -135,6 +148,7 @@ class AMIBridge extends EventEmitter {
       console.log(`[AMI Bridge] Connecting to ${this.config.host}:${this.config.port}`);
       
       this.socket = new net.Socket();
+      this.socket.setTimeout(10000);
       
       this.socket.connect(this.config.port, this.config.host, () => {
         console.log('[AMI Bridge] Connected to Asterisk Manager Interface');
@@ -153,21 +167,34 @@ class AMIBridge extends EventEmitter {
       });
 
       this.socket.on('error', (error) => {
-        console.error('[AMI Bridge] Connection error:', error);
+        console.error('[AMI Bridge] Connection error:', error.message);
+        this.isConnected = false;
         reject(error);
+      });
+
+      this.socket.on('timeout', () => {
+        console.error('[AMI Bridge] Connection timeout');
+        this.socket.destroy();
+        reject(new Error('Connection timeout'));
       });
     });
   }
 
   scheduleReconnect() {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+    }
+
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       console.log(`[AMI Bridge] Reconnecting in 5 seconds (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-      setTimeout(() => {
+      this.reconnectTimeout = setTimeout(() => {
         this.connect().catch((error) => {
-          console.error('[AMI Bridge] Reconnection failed:', error);
+          console.error('[AMI Bridge] Reconnection failed:', error.message);
         });
       }, 5000);
+    } else {
+      console.error('[AMI Bridge] Max reconnection attempts reached');
     }
   }
 
@@ -179,14 +206,19 @@ class AMIBridge extends EventEmitter {
       Events: 'on'
     };
 
-    const response = await this.sendAction(loginAction);
-    if (response.Response === 'Success') {
-      this.isConnected = true;
-      this.reconnectAttempts = 0;
-      console.log('[AMI Bridge] Successfully logged in to AMI');
-      return true;
-    } else {
-      throw new Error('AMI Login failed: ' + response.Message);
+    try {
+      const response = await this.sendAction(loginAction);
+      if (response.Response === 'Success') {
+        this.isConnected = true;
+        this.reconnectAttempts = 0;
+        console.log('[AMI Bridge] Successfully logged in to AMI');
+        return true;
+      } else {
+        throw new Error('AMI Login failed: ' + (response.Message || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('[AMI Bridge] Login error:', error.message);
+      throw error;
     }
   }
 
@@ -206,15 +238,28 @@ class AMIBridge extends EventEmitter {
       }
       message += '\r\n';
 
-      this.pendingActions.set(actionId.toString(), { resolve, reject, timestamp: Date.now() });
+      this.pendingActions.set(actionId.toString(), { 
+        resolve, 
+        reject, 
+        timestamp: Date.now(),
+        action: action.Action 
+      });
 
-      console.log('[AMI Bridge] Sending action:', action);
-      this.socket.write(message);
+      console.log(`[AMI Bridge] Sending action: ${action.Action} (ID: ${actionId})`);
+      
+      try {
+        this.socket.write(message);
+      } catch (error) {
+        this.pendingActions.delete(actionId.toString());
+        reject(error);
+        return;
+      }
 
+      // Set timeout for action
       setTimeout(() => {
         if (this.pendingActions.has(actionId.toString())) {
           this.pendingActions.delete(actionId.toString());
-          reject(new Error('Action timeout'));
+          reject(new Error(`Action ${action.Action} timeout`));
         }
       }, 10000);
     });
@@ -252,7 +297,10 @@ class AMIBridge extends EventEmitter {
   }
 
   handleMessage(message) {
-    console.log('[AMI Bridge] Received message:', message);
+    // Only log important messages to reduce noise
+    if (message.Event && ['Newchannel', 'Hangup', 'DialBegin', 'DialEnd'].includes(message.Event)) {
+      console.log(`[AMI Bridge] Event: ${message.Event}`);
+    }
 
     if (message.ActionID && this.pendingActions.has(message.ActionID)) {
       const pending = this.pendingActions.get(message.ActionID);
@@ -279,29 +327,58 @@ class AMIBridge extends EventEmitter {
 
     try {
       const response = await this.sendAction(originateAction);
-      console.log('[AMI Bridge] Originate response:', response);
+      console.log(`[AMI Bridge] Originate response: ${response.Response}`);
       return response.Response === 'Success';
     } catch (error) {
-      console.error('[AMI Bridge] Originate error:', error);
+      console.error('[AMI Bridge] Originate error:', error.message);
       return false;
     }
   }
 
+  async getChannels() {
+    try {
+      const response = await this.sendAction({ Action: 'CoreShowChannels' });
+      return response;
+    } catch (error) {
+      console.error('[AMI Bridge] GetChannels error:', error.message);
+      return null;
+    }
+  }
+
   disconnect() {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    
     if (this.socket) {
+      this.socket.removeAllListeners();
       this.socket.end();
       this.socket = null;
       this.isConnected = false;
     }
+    
+    this.pendingActions.clear();
   }
 }
 
 // Load configuration
 let config;
 try {
-  config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
+  const configPath = path.join(__dirname, 'config.json');
+  if (!fs.existsSync(configPath)) {
+    console.error('Configuration file config.json not found. Please create it from config.example.json');
+    process.exit(1);
+  }
+  config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 } catch (error) {
-  console.error('Configuration file not found or invalid. Please create config.json');
+  console.error('Configuration file error:', error.message);
+  process.exit(1);
+}
+
+// Validate configuration
+if (!config.ami || !config.ami.host || !config.ami.username || !config.ami.password) {
+  console.error('Invalid configuration. AMI settings are required.');
   process.exit(1);
 }
 
@@ -316,37 +393,68 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 // AMI Bridge instance
 let amiBridge = null;
 
-// WebSocket server
-const wss = new WebSocket.Server({ port: wsPort });
+// WebSocket server for real-time events
+const wss = new WebSocket.Server({ 
+  port: wsPort,
+  clientTracking: true 
+});
 
-wss.on('connection', (ws) => {
-  console.log('[WebSocket] Client connected');
+console.log(`[WebSocket Server] Starting on port ${wsPort}`);
 
+wss.on('connection', (ws, req) => {
+  console.log(`[WebSocket] Client connected from ${req.socket.remoteAddress}`);
+
+  // Send current status
   if (amiBridge) {
     ws.send(JSON.stringify({
       type: 'status',
-      connected: amiBridge.isConnected
+      connected: amiBridge.isConnected,
+      timestamp: new Date().toISOString()
     }));
 
     const eventHandler = (event) => {
-      ws.send(JSON.stringify({
-        type: 'event',
-        data: event
-      }));
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'event',
+          data: event,
+          timestamp: new Date().toISOString()
+        }));
+      }
+    };
+
+    const disconnectHandler = () => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'status',
+          connected: false,
+          timestamp: new Date().toISOString()
+        }));
+      }
     };
 
     amiBridge.on('event', eventHandler);
+    amiBridge.on('disconnected', disconnectHandler);
 
     ws.on('close', () => {
       console.log('[WebSocket] Client disconnected');
       if (amiBridge) {
         amiBridge.removeListener('event', eventHandler);
+        amiBridge.removeListener('disconnected', disconnectHandler);
       }
     });
   }
+
+  ws.on('error', (error) => {
+    console.error('[WebSocket] Client error:', error.message);
+  });
 });
 
 // API Routes
@@ -354,6 +462,13 @@ app.post('/api/ami/connect', async (req, res) => {
   try {
     const { host, port, username, password } = req.body;
     
+    if (!host || !port || !username || !password) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Host, port, username, and password are required' 
+      });
+    }
+
     if (amiBridge) {
       amiBridge.disconnect();
     }
@@ -363,6 +478,7 @@ app.post('/api/ami/connect', async (req, res) => {
     
     res.json({ success: true, message: 'Connected to AMI successfully' });
   } catch (error) {
+    console.error('[API] Connect error:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -376,7 +492,10 @@ app.post('/api/ami/originate', async (req, res) => {
     const { channel, extension, context, callerID } = req.body;
     
     if (!channel || !extension) {
-      return res.status(400).json({ success: false, error: 'Channel and extension are required' });
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Channel and extension are required' 
+      });
     }
 
     const success = await amiBridge.originateCall(channel, extension, context, callerID);
@@ -386,6 +505,7 @@ app.post('/api/ami/originate', async (req, res) => {
       message: success ? 'Call originated successfully' : 'Failed to originate call'
     });
   } catch (error) {
+    console.error('[API] Originate error:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -393,8 +513,23 @@ app.post('/api/ami/originate', async (req, res) => {
 app.get('/api/ami/status', (req, res) => {
   res.json({
     connected: amiBridge ? amiBridge.isConnected : false,
+    reconnectAttempts: amiBridge ? amiBridge.reconnectAttempts : 0,
     timestamp: new Date().toISOString()
   });
+});
+
+app.get('/api/ami/channels', async (req, res) => {
+  try {
+    if (!amiBridge || !amiBridge.isConnected) {
+      return res.status(400).json({ success: false, error: 'Not connected to AMI' });
+    }
+
+    const channels = await amiBridge.getChannels();
+    res.json({ success: true, data: channels });
+  } catch (error) {
+    console.error('[API] Channels error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 app.post('/api/ami/disconnect', (req, res) => {
@@ -406,24 +541,41 @@ app.post('/api/ami/disconnect', (req, res) => {
 });
 
 // Auto-connect if configuration exists
-if (config.ami) {
+if (config.ami && config.ami.host) {
   console.log('[AMI Bridge] Auto-connecting with configuration...');
   amiBridge = new AMIBridge(config.ami);
   amiBridge.connect().catch((error) => {
-    console.error('[AMI Bridge] Auto-connect failed:', error);
+    console.error('[AMI Bridge] Auto-connect failed:', error.message);
   });
 }
 
-app.listen(port, () => {
+// Start Express server
+app.listen(port, '0.0.0.0', () => {
   console.log(`[AMI Bridge Server] Running on port ${port}`);
   console.log(`[WebSocket Server] Running on port ${wsPort}`);
+  console.log(`[AMI Bridge] Configuration loaded for ${config.ami.host}:${config.ami.port}`);
 });
 
+// Graceful shutdown
 process.on('SIGINT', () => {
-  console.log('\n[AMI Bridge] Shutting down...');
+  console.log('\n[AMI Bridge] Shutting down gracefully...');
+  
   if (amiBridge) {
     amiBridge.disconnect();
   }
+  
+  wss.clients.forEach((ws) => {
+    ws.close();
+  });
+  
+  wss.close(() => {
+    console.log('[WebSocket Server] Closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGTERM', () => {
+  console.log('\n[AMI Bridge] Received SIGTERM, shutting down...');
   process.exit(0);
 });
 EOF
@@ -447,13 +599,35 @@ EOF
 }
 EOF
 
+    # Create example configuration
+    cat > config.example.json << EOF
+{
+  "ami": {
+    "host": "127.0.0.1",
+    "port": 5038,
+    "username": "your-ami-username",
+    "password": "your-ami-password"
+  },
+  "server": {
+    "port": 3001,
+    "websocketPort": 8080
+  },
+  "security": {
+    "allowedOrigins": ["http://localhost:5173", "https://yourdomain.com"]
+  }
+}
+EOF
+
     # Set permissions
     chown -R "$SERVICE_USER:$SERVICE_USER" "$AMI_BRIDGE_DIR"
     chmod 755 "$AMI_BRIDGE_DIR"
     chmod 600 "$AMI_BRIDGE_DIR/config.json"
+    chmod 644 "$AMI_BRIDGE_DIR/config.example.json"
     
     log "AMI Bridge application created"
 }
+
+# ... keep existing code (configure_freepbx_ami, create_systemd_service, configure_firewall, start_services, create_management_script, main functions remain the same)
 
 # Configure FreePBX AMI
 configure_freepbx_ami() {
@@ -627,8 +801,12 @@ main() {
     echo ""
     echo "IMPORTANT: Save the AMI password shown above!"
     echo "You'll need it to configure your CRM frontend."
+    echo ""
+    echo "Next steps:"
+    echo "1. Test the service: ami-bridge-status"
+    echo "2. Check API: curl http://localhost:3001/api/ami/status"
+    echo "3. Configure your frontend to use this bridge"
 }
 
 # Run installation
 main "$@"
-EOF
