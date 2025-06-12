@@ -11,7 +11,7 @@
     "websocketPort": 8080
   },
   "security": {
-    "allowedOrigins": ["http://localhost:5173", "https://yourdomain.com"],
+    "allowedOrigins": ["http://localhost:5173", "http://192.168.0.5", "http://192.168.0.5/crm"],
     "apiKey": "your-api-key-here"
   }
 }
