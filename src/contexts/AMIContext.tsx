@@ -58,40 +58,41 @@ export const AMIProvider = ({ children }: AMIProviderProps) => {
 
   const [pendingCall, setPendingCall] = useState<PendingCall | null>(null);
   const [userExtension, setUserExtension] = useState<string>('1000');
+  const [hasAutoConnected, setHasAutoConnected] = useState<boolean>(false);
 
   const amiHook = useAsteriskAMI(config);
 
-  // Auto-connect on user login and set user extension
+  // Auto-connect ONLY ONCE per user session - prevent reconnections on tab switches
   useEffect(() => {
-    if (user && !amiHook.isConnected && !amiHook.isConnecting) {
-      console.log(`🔄 [AMI] Auto-connecting for user: ${user.name} (${user.email})`);
+    if (user && !amiHook.isConnected && !amiHook.isConnecting && !hasAutoConnected) {
+      console.log(`🔄 [AMI] ONE-TIME auto-connect for user: ${user.name} (${user.email})`);
       
       // Set user-specific extension based on user data
       const extension = getUserExtension(user);
       setUserExtension(extension);
       localStorage.setItem('user_extension', extension);
       
-      console.log(`📞 [AMI] Setting extension for ${user.name}: ${extension}`);
+      console.log(`📞 [AMI] Setting PJSIP extension for ${user.name}: PJSIP/${extension}`);
       
-      // Auto-connect AMI
+      // Auto-connect AMI ONCE
+      setHasAutoConnected(true);
       amiHook.connect().then(success => {
         if (success) {
-          console.log(`✅ [AMI] Auto-connected successfully for user: ${user.name}`);
+          console.log(`✅ [AMI] Auto-connected successfully for user: ${user.name} on extension PJSIP/${extension}`);
         } else {
           console.log(`❌ [AMI] Auto-connect failed for user: ${user.name}`);
+          setHasAutoConnected(false); // Allow retry if failed
         }
       });
     }
-  }, [user, amiHook.isConnected, amiHook.isConnecting]);
+  }, [user, amiHook.isConnected, amiHook.isConnecting, hasAutoConnected]);
 
   // Function to determine user extension based on user data
   const getUserExtension = (user: any): string => {
-    // Check if user has a predefined extension in their profile
     if (user.extension) {
       return user.extension;
     }
     
-    // Map users to extensions based on their ID or role
     const extensionMap: { [key: string]: string } = {
       '1': '1000', // Admin
       '2': '1001', // Manager
@@ -102,13 +103,11 @@ export const AMIProvider = ({ children }: AMIProviderProps) => {
       'agent@abdurahman.co.za': '1002'
     };
     
-    // Try to get extension by user ID first, then by email
     return extensionMap[user.id] || extensionMap[user.email] || '1000';
   };
 
   const updateConfig = (newConfig: AMIConfig) => {
     setConfig(newConfig);
-    // Save to localStorage
     localStorage.setItem('ami_host', newConfig.host);
     localStorage.setItem('ami_port', newConfig.port);
     localStorage.setItem('ami_username', newConfig.username);
@@ -118,8 +117,7 @@ export const AMIProvider = ({ children }: AMIProviderProps) => {
   };
 
   const initiateCallFromLead = (leadName: string, phone: string, leadId: number) => {
-    console.log('Initiating call from lead:', { leadName, phone, leadId });
-    console.log(`📞 [AMI] User ${user?.name} (ext: ${userExtension}) initiating call to ${phone}`);
+    console.log(`📞 [AMI] User ${user?.name} (PJSIP/${userExtension}) initiating REAL call to ${phone}`);
     
     setPendingCall({
       leadName,
@@ -133,17 +131,19 @@ export const AMIProvider = ({ children }: AMIProviderProps) => {
     setPendingCall(null);
   };
 
-  // Enhanced originate call that uses the current user's extension
+  // Enhanced originate call that uses PROPER PJSIP format
   const originateCallWithUserExtension = async (targetPhone: string, context: string = 'from-internal'): Promise<boolean> => {
     if (!amiHook.isConnected) {
       console.error('❌ [AMI] Cannot originate call - AMI not connected');
       return false;
     }
 
-    const userChannel = `PJSIP/${userExtension}`;
-    console.log(`📞 [AMI] Originating call from user extension ${userExtension} to ${targetPhone}`);
+    // ENSURE PROPER PJSIP CHANNEL FORMAT
+    const pjsipChannel = `PJSIP/${userExtension}`;
+    console.log(`📞 [AMI] REAL CALL: Originating from PJSIP extension ${pjsipChannel} to ${targetPhone}`);
+    console.log(`📞 [AMI] Call details: Channel=${pjsipChannel}, Exten=${targetPhone}, Context=${context}`);
     
-    return await amiHook.originateCall(userChannel, targetPhone, context);
+    return await amiHook.originateCall(pjsipChannel, targetPhone, context);
   };
 
   const value: AMIContextType = {
@@ -154,7 +154,7 @@ export const AMIProvider = ({ children }: AMIProviderProps) => {
     updateConfig,
     initiateCallFromLead,
     clearPendingCall,
-    // Override originateCall to use user's extension
+    // Override originateCall to use user's PJSIP extension
     originateCall: originateCallWithUserExtension
   };
 

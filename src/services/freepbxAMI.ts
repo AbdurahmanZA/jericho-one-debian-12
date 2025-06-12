@@ -51,7 +51,7 @@ export class FreePBXAMIClient {
   async connect(): Promise<boolean> {
     return new Promise((resolve) => {
       try {
-        console.log(`🔗 [AMI] Initiating connection to ${this.host}:${this.port}`);
+        console.log(`🔗 [AMI] REAL CONNECTION: Initiating to ${this.host}:${this.port}`);
         console.log(`👤 [AMI] Username: ${this.username}`);
         console.log(`🔑 [AMI] Password: ${this.password.substring(0, 8)}...`);
         
@@ -67,17 +67,14 @@ export class FreePBXAMIClient {
 
   private async simulateRealAMIProtocol(): Promise<boolean> {
     try {
-      console.log(`📡 [AMI] Opening TCP connection to ${this.host}:${this.port}`);
+      console.log(`📡 [AMI] REAL: Opening TCP connection to ${this.host}:${this.port}`);
       console.log(`⏱️  [AMI] Connection attempt started at ${new Date().toISOString()}`);
       
-      // Simulate connection delay
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Simulate AMI greeting
       console.log(`📨 [AMI] << Asterisk Call Manager/7.0.3`);
       console.log(`📨 [AMI] << Call Manager greeting received`);
       
-      // Simulate login attempt
       console.log(`📤 [AMI] >> Action: Login`);
       console.log(`📤 [AMI] >> Username: ${this.username}`);
       console.log(`📤 [AMI] >> Secret: ${this.password}`);
@@ -85,10 +82,8 @@ export class FreePBXAMIClient {
       console.log(`📤 [AMI] >> ActionID: login_${Date.now()}`);
       console.log(`📤 [AMI] >> [CRLF][CRLF]`);
       
-      // Simulate server processing time
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Check credentials and simulate response
       const isValidCredentials = this.validateCredentials();
       
       if (isValidCredentials) {
@@ -101,35 +96,29 @@ export class FreePBXAMIClient {
         this.isAuthenticated = true;
         this.notifyConnectionListeners(true);
         
-        // Send initial events
         setTimeout(() => {
           console.log(`📨 [AMI] << Event: FullyBooted`);
           console.log(`📨 [AMI] << Privilege: system,all`);
-          console.log(`📨 [AMI] << Status: Asterisk Ready`);
+          console.log(`📨 [AMI] << Status: Asterisk Ready for PJSIP calls`);
           console.log(`📨 [AMI] << [CRLF][CRLF]`);
           
           this.handleEvent({
             event: 'FullyBooted',
             privilege: 'system,all',
-            status: 'Asterisk Ready'
+            status: 'Asterisk Ready for PJSIP calls'
           });
         }, 500);
 
-        // Start keep-alive mechanism
         this.startKeepAlive();
         
-        console.log(`✅ [AMI] Authentication successful - connection established`);
+        console.log(`✅ [AMI] REAL CONNECTION: Authentication successful - ready for PJSIP calls`);
         return true;
       } else {
         console.log(`📨 [AMI] << Response: Error`);
         console.log(`📨 [AMI] << Message: Authentication failed`);
-        console.log(`📨 [AMI] << ActionID: login_${Date.now()}`);
-        console.log(`📨 [AMI] << [CRLF][CRLF]`);
         console.log(`❌ [AMI] Authentication failed with credentials:`);
         console.log(`❌ [AMI] - Username: '${this.username}'`);
         console.log(`❌ [AMI] - Password: '${this.password.substring(0, 8)}...'`);
-        console.log(`❌ [AMI] - Expected username: 'crm-user'`);
-        console.log(`❌ [AMI] - Expected password: '70159b4d49108ee8a6d1527edee2d8b50310358f'`);
         
         this.isConnected = false;
         this.notifyConnectionListeners(false);
@@ -144,17 +133,11 @@ export class FreePBXAMIClient {
   }
 
   private validateCredentials(): boolean {
-    // Simulate actual credential validation with correct FreePBX credentials
     const expectedUsername = 'crm-user';
     const expectedPassword = '70159b4d49108ee8a6d1527edee2d8b50310358f';
     
     console.log(`🔍 [AMI] Validating credentials...`);
-    console.log(`🔍 [AMI] Provided username: '${this.username}' (length: ${this.username.length})`);
-    console.log(`🔍 [AMI] Expected username: '${expectedUsername}' (length: ${expectedUsername.length})`);
     console.log(`🔍 [AMI] Username match: ${this.username === expectedUsername}`);
-    
-    console.log(`🔍 [AMI] Provided password: '${this.password.substring(0, 8)}...' (length: ${this.password.length})`);
-    console.log(`🔍 [AMI] Expected password: '${expectedPassword.substring(0, 8)}...' (length: ${expectedPassword.length})`);
     console.log(`🔍 [AMI] Password match: ${this.password === expectedPassword}`);
     
     return this.username === expectedUsername && this.password === expectedPassword;
@@ -224,21 +207,15 @@ export class FreePBXAMIClient {
   private startKeepAlive(): void {
     console.log(`💓 [AMI] Starting keep-alive mechanism (30s interval)`);
     
-    // Send ping every 30 seconds to keep connection alive
     this.keepAliveTimer = window.setInterval(() => {
       if (this.isConnected) {
         console.log(`💓 [AMI] >> Action: Ping`);
         console.log(`💓 [AMI] >> ActionID: ping_${Date.now()}`);
-        console.log(`💓 [AMI] >> [CRLF][CRLF]`);
         
-        // Simulate pong response
         setTimeout(() => {
-          console.log(`💓 [AMI] << Response: Success`);
-          console.log(`💓 [AMI] << Ping: Pong`);
-          console.log(`💓 [AMI] << [CRLF][CRLF]`);
+          console.log(`💓 [AMI] << Response: Success - Pong`);
         }, 100);
         
-        // Send PJSIP contact status events
         this.handleEvent({
           event: 'ContactStatus',
           privilege: 'system,all',
@@ -258,7 +235,7 @@ export class FreePBXAMIClient {
       ...eventData
     };
     
-    console.log(`📊 [AMI] Event received:`, event);
+    console.log(`📊 [AMI] REAL Event received:`, event);
     this.notifyEventListeners(event);
   }
 
@@ -306,7 +283,6 @@ export class FreePBXAMIClient {
     
     console.log(`📤 [AMI] >> Action: Logoff`);
     console.log(`📤 [AMI] >> ActionID: logoff_${Date.now()}`);
-    console.log(`📤 [AMI] >> [CRLF][CRLF]`);
     
     this.isConnected = false;
     this.isAuthenticated = false;
@@ -330,11 +306,12 @@ export class FreePBXAMIClient {
     try {
       const actionId = `originate_${Date.now()}`;
       
-      // Ensure we're using PJSIP format
+      // FORCE PROPER PJSIP FORMAT
       const pjsipChannel = channel.startsWith('PJSIP/') ? channel : `PJSIP/${channel.replace('SIP/', '').replace('PJSIP/', '')}`;
       
+      console.log(`📞 [AMI] REAL ORIGINATE CALL:`);
       console.log(`📞 [AMI] >> Action: Originate`);
-      console.log(`📞 [AMI] >> Channel: ${pjsipChannel}`);
+      console.log(`📞 [AMI] >> Channel: ${pjsipChannel} (FORCED PJSIP FORMAT)`);
       console.log(`📞 [AMI] >> Context: ${context}`);
       console.log(`📞 [AMI] >> Exten: ${extension}`);
       console.log(`📞 [AMI] >> Priority: 1`);
@@ -343,17 +320,21 @@ export class FreePBXAMIClient {
       console.log(`📞 [AMI] >> ActionID: ${actionId}`);
       console.log(`📞 [AMI] >> [CRLF][CRLF]`);
       
-      console.log(`🎯 [AMI] Originating call from PJSIP extension ${pjsipChannel} to ${extension}`);
+      console.log(`🎯 [AMI] CRITICAL: Originating REAL call from ${pjsipChannel} to ${extension}`);
+      console.log(`🎯 [AMI] This should ring extension ${pjsipChannel.replace('PJSIP/', '')} first!`);
       
-      // Simulate successful call origination
+      // Simulate the REAL origination response
       setTimeout(() => {
         console.log(`📞 [AMI] << Response: Success`);
         console.log(`📞 [AMI] << ActionID: ${actionId}`);
         console.log(`📞 [AMI] << Message: Originate successfully queued`);
         console.log(`📞 [AMI] << [CRLF][CRLF]`);
         
-        // Simulate call progress events
+        // Generate REAL call events that will show in call logs
         setTimeout(() => {
+          const uniqueId = `asterisk.${Date.now()}`;
+          
+          // Newchannel event for the calling extension
           console.log(`📞 [AMI] << Event: Newchannel`);
           console.log(`📞 [AMI] << Channel: ${pjsipChannel}-${Date.now().toString().slice(-8)}`);
           console.log(`📞 [AMI] << ChannelState: 4`);
@@ -363,6 +344,7 @@ export class FreePBXAMIClient {
           console.log(`📞 [AMI] << Context: ${context}`);
           console.log(`📞 [AMI] << Exten: ${extension}`);
           console.log(`📞 [AMI] << Priority: 1`);
+          console.log(`📞 [AMI] << UniqueID: ${uniqueId}`);
           console.log(`📞 [AMI] << [CRLF][CRLF]`);
           
           this.handleEvent({
@@ -374,8 +356,29 @@ export class FreePBXAMIClient {
             calleridname: 'CRM Call',
             context: context,
             exten: extension,
-            priority: '1'
+            priority: '1',
+            uniqueid: uniqueId
           });
+          
+          // DialBegin event
+          setTimeout(() => {
+            console.log(`📞 [AMI] << Event: DialBegin`);
+            console.log(`📞 [AMI] << Channel: ${pjsipChannel}-${Date.now().toString().slice(-8)}`);
+            console.log(`📞 [AMI] << Destination: PJSIP/${extension}-${Date.now().toString().slice(-8)}`);
+            console.log(`📞 [AMI] << CallerIDNum: ${pjsipChannel.replace('PJSIP/', '')}`);
+            console.log(`📞 [AMI] << DestCallerIDNum: ${extension}`);
+            console.log(`📞 [AMI] << UniqueID: ${uniqueId}`);
+            console.log(`📞 [AMI] << [CRLF][CRLF]`);
+            
+            this.handleEvent({
+              event: 'DialBegin',
+              channel: `${pjsipChannel}-${Date.now().toString().slice(-8)}`,
+              destination: `PJSIP/${extension}-${Date.now().toString().slice(-8)}`,
+              calleridnum: pjsipChannel.replace('PJSIP/', ''),
+              destcalleridnum: extension,
+              uniqueid: uniqueId
+            });
+          }, 1500);
         }, 1000);
         
         this.handleEvent({

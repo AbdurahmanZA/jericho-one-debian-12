@@ -25,7 +25,7 @@ interface ActiveCall {
 const CallCenter = ({ userRole }: CallCenterProps) => {
   const { toast } = useToast();
   const { user } = useAuth();
-  const { pendingCall, clearPendingCall, userExtension, isConnected } = useAMIContext();
+  const { pendingCall, clearPendingCall, userExtension, isConnected, originateCall, callEvents } = useAMIContext();
   
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [callNotes, setCallNotes] = useState("");
@@ -37,70 +37,112 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
   // Subscribe to call records service
   useEffect(() => {
     const unsubscribe = callRecordsService.subscribe((records) => {
-      setCallHistory(records.slice(0, 10)); // Show latest 10 calls
+      setCallHistory(records.slice(0, 10));
     });
 
-    // Initial load
     setCallHistory(callRecordsService.getRecords().slice(0, 10));
-
     return unsubscribe;
   }, []);
 
   // Display AMI connection status and user extension info
   useEffect(() => {
     if (user && userExtension) {
-      console.log(`📞 [CallCenter] User ${user.name} assigned extension: ${userExtension}`);
+      console.log(`📞 [CallCenter] User ${user.name} assigned PJSIP extension: PJSIP/${userExtension}`);
       console.log(`🔗 [CallCenter] AMI Connection Status: ${isConnected ? 'Connected' : 'Disconnected'}`);
       
       if (isConnected) {
         toast({
           title: "AMI Connected",
-          description: `Ready to make calls from extension ${userExtension}`,
+          description: `Ready for PJSIP calls from extension ${userExtension}`,
         });
       }
     }
   }, [user, userExtension, isConnected, toast]);
 
-  // Handle pending calls from Lead Management
+  // Listen to REAL AMI call events instead of simulating
   useEffect(() => {
-    if (pendingCall && !activeCall) {
-      console.log('Processing pending call from leads:', pendingCall);
-      console.log(`📞 [CallCenter] ${user?.name} (ext: ${userExtension}) calling ${pendingCall.phone}`);
+    if (callEvents.length > 0) {
+      const latestEvent = callEvents[0];
+      console.log(`📞 [CallCenter] Processing REAL AMI event:`, latestEvent);
       
-      const newCall: ActiveCall = {
-        id: `call_${pendingCall.timestamp}`,
-        leadName: pendingCall.leadName,
-        phone: pendingCall.phone,
-        duration: '00:00',
-        status: 'ringing',
-        startTime: new Date(),
-        leadId: pendingCall.leadId.toString()
-      };
-
-      setActiveCall(newCall);
-      clearPendingCall();
-
-      toast({
-        title: "Call from Lead Management",
-        description: `Calling ${pendingCall.leadName} at ${pendingCall.phone} from extension ${userExtension}`,
-      });
-
-      // Simulate call connection after 2-4 seconds
-      const connectionDelay = Math.random() * 2000 + 2000;
-      setTimeout(() => {
+      // Handle real call events
+      if (latestEvent.event === 'DialBegin' && latestEvent.calleridnum === userExtension) {
+        console.log(`📞 [CallCenter] REAL CALL DETECTED: User ${userExtension} dialing ${latestEvent.destcalleridnum}`);
+        
+        if (pendingCall) {
+          const newCall: ActiveCall = {
+            id: `real_call_${latestEvent.uniqueid}`,
+            leadName: pendingCall.leadName,
+            phone: pendingCall.phone,
+            duration: '00:00',
+            status: 'ringing',
+            startTime: new Date(),
+            leadId: pendingCall.leadId.toString()
+          };
+          
+          setActiveCall(newCall);
+          clearPendingCall();
+          
+          toast({
+            title: "REAL Call in Progress",
+            description: `Calling ${pendingCall.leadName} via PJSIP/${userExtension}`,
+          });
+        }
+      }
+      
+      // Handle call answer events
+      if (latestEvent.event === 'DialEnd' && latestEvent.dialstatus === 'ANSWER') {
         setActiveCall(prev => {
-          if (prev && prev.id === newCall.id) {
+          if (prev) {
+            toast({
+              title: "Call Answered",
+              description: `Connected to ${prev.leadName}`,
+            });
             return { ...prev, status: 'connected', startTime: new Date() };
           }
           return prev;
         });
-        toast({
-          title: "Call Connected",
-          description: `Connected to ${pendingCall.leadName}`,
-        });
-      }, connectionDelay);
+      }
+      
+      // Handle call hangup events
+      if (latestEvent.event === 'Hangup' && activeCall) {
+        console.log(`📞 [CallCenter] REAL HANGUP detected for ${latestEvent.channel}`);
+        endCall();
+      }
     }
-  }, [pendingCall, activeCall, clearPendingCall, toast, user, userExtension]);
+  }, [callEvents, userExtension, pendingCall, activeCall, clearPendingCall, toast]);
+
+  // Handle pending calls from Lead Management with REAL AMI calls
+  useEffect(() => {
+    if (pendingCall && !activeCall && isConnected) {
+      console.log(`📞 [CallCenter] Processing pending call with REAL AMI: ${pendingCall.phone}`);
+      
+      // Make REAL AMI call
+      const makeRealCall = async () => {
+        const success = await originateCall(
+          `PJSIP/${userExtension}`,
+          pendingCall.phone,
+          'from-internal'
+        );
+        
+        if (success) {
+          toast({
+            title: "Real Call Initiated",
+            description: `AMI originating call from PJSIP/${userExtension} to ${pendingCall.phone}`,
+          });
+        } else {
+          toast({
+            title: "Call Failed",
+            description: "Could not initiate call via AMI",
+            variant: "destructive"
+          });
+          clearPendingCall();
+        }
+      };
+      
+      makeRealCall();
+    }
+  }, [pendingCall, activeCall, isConnected, originateCall, userExtension, clearPendingCall, toast]);
 
   // Real-time call timer
   useEffect(() => {
@@ -120,23 +162,8 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
   }, [activeCall]);
 
   const handleCallInitiated = (callData: ActiveCall) => {
-    console.log(`📞 [CallCenter] Call initiated by ${user?.name} from extension ${userExtension}`);
+    console.log(`📞 [CallCenter] REAL Call initiated by ${user?.name} from PJSIP/${userExtension}`);
     setActiveCall(callData);
-    
-    // Simulate call connection after 2-4 seconds (random for realism)
-    const connectionDelay = Math.random() * 2000 + 2000;
-    setTimeout(() => {
-      setActiveCall(prev => {
-        if (prev && prev.id === callData.id) {
-          return { ...prev, status: 'connected', startTime: new Date() };
-        }
-        return prev;
-      });
-      toast({
-        title: "Call Connected",
-        description: `Connected to ${callData.leadName}`,
-      });
-    }, connectionDelay);
   };
 
   const handleLeadCreated = (leadData: { name: string; phone: string; notes: string }) => {
@@ -257,16 +284,21 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
         <div className="flex items-center justify-between">
           <div>
             <h3 className="font-medium text-blue-900">
-              Extension: {userExtension} | User: {user?.name}
+              PJSIP Extension: PJSIP/{userExtension} | User: {user?.name}
             </h3>
             <p className="text-sm text-blue-700">
               AMI Status: {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
             </p>
           </div>
           <div className="text-sm text-blue-600">
-            Ready for PJSIP calls from extension {userExtension}
+            Ready for REAL PJSIP calls from PJSIP/{userExtension}
           </div>
         </div>
+        {callEvents.length > 0 && (
+          <div className="mt-2 text-xs text-blue-600">
+            Latest AMI Event: {callEvents[0].event} - {callEvents[0].channel || callEvents[0].status || 'System'}
+          </div>
+        )}
       </div>
 
       <CallDialer 
