@@ -1,0 +1,189 @@
+
+interface AMIBridgeConfig {
+  serverUrl: string;
+  websocketUrl: string;
+}
+
+interface OriginateCallRequest {
+  channel: string;
+  extension: string;
+  context?: string;
+  callerID?: string;
+}
+
+interface AMIEvent {
+  event: string;
+  [key: string]: string | undefined;
+}
+
+class AMIBridgeClient {
+  private config: AMIBridgeConfig;
+  private websocket: WebSocket | null = null;
+  private eventCallbacks: ((event: AMIEvent) => void)[] = [];
+  private statusCallbacks: ((connected: boolean) => void)[] = [];
+
+  constructor(config: AMIBridgeConfig) {
+    this.config = config;
+  }
+
+  async connect(amiConfig: { host: string; port: string; username: string; password: string }): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.config.serverUrl}/api/ami/connect`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(amiConfig),
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        this.connectWebSocket();
+        return true;
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error) {
+      console.error('[AMI Bridge Client] Connection error:', error);
+      return false;
+    }
+  }
+
+  async disconnect(): Promise<boolean> {
+    try {
+      if (this.websocket) {
+        this.websocket.close();
+        this.websocket = null;
+      }
+
+      const response = await fetch(`${this.config.serverUrl}/api/ami/disconnect`, {
+        method: 'POST',
+      });
+
+      const result = await response.json();
+      return result.success;
+    } catch (error) {
+      console.error('[AMI Bridge Client] Disconnect error:', error);
+      return false;
+    }
+  }
+
+  async getStatus(): Promise<{ connected: boolean; timestamp: string }> {
+    try {
+      const response = await fetch(`${this.config.serverUrl}/api/ami/status`);
+      return await response.json();
+    } catch (error) {
+      console.error('[AMI Bridge Client] Status error:', error);
+      return { connected: false, timestamp: new Date().toISOString() };
+    }
+  }
+
+  async originateCall(request: OriginateCallRequest): Promise<boolean> {
+    try {
+      console.log('[AMI Bridge Client] Originating call:', request);
+      
+      const response = await fetch(`${this.config.serverUrl}/api/ami/originate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          channel: request.channel,
+          extension: request.extension,
+          context: request.context || 'from-internal',
+          callerID: request.callerID
+        }),
+      });
+
+      const result = await response.json();
+      console.log('[AMI Bridge Client] Originate result:', result);
+      
+      return result.success;
+    } catch (error) {
+      console.error('[AMI Bridge Client] Originate error:', error);
+      return false;
+    }
+  }
+
+  async getActiveChannels(): Promise<any> {
+    try {
+      const response = await fetch(`${this.config.serverUrl}/api/ami/channels`);
+      const result = await response.json();
+      return result.success ? result.data : null;
+    } catch (error) {
+      console.error('[AMI Bridge Client] Get channels error:', error);
+      return null;
+    }
+  }
+
+  private connectWebSocket() {
+    if (this.websocket) {
+      this.websocket.close();
+    }
+
+    this.websocket = new WebSocket(this.config.websocketUrl);
+
+    this.websocket.onopen = () => {
+      console.log('[AMI Bridge Client] WebSocket connected');
+    };
+
+    this.websocket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        if (data.type === 'status') {
+          this.statusCallbacks.forEach(callback => callback(data.connected));
+        } else if (data.type === 'event') {
+          this.eventCallbacks.forEach(callback => callback(data.data));
+        }
+      } catch (error) {
+        console.error('[AMI Bridge Client] WebSocket message error:', error);
+      }
+    };
+
+    this.websocket.onclose = () => {
+      console.log('[AMI Bridge Client] WebSocket disconnected');
+      // Attempt to reconnect after 5 seconds
+      setTimeout(() => {
+        if (this.websocket?.readyState === WebSocket.CLOSED) {
+          this.connectWebSocket();
+        }
+      }, 5000);
+    };
+
+    this.websocket.onerror = (error) => {
+      console.error('[AMI Bridge Client] WebSocket error:', error);
+    };
+  }
+
+  onEvent(callback: (event: AMIEvent) => void) {
+    this.eventCallbacks.push(callback);
+  }
+
+  onStatusChange(callback: (connected: boolean) => void) {
+    this.statusCallbacks.push(callback);
+  }
+
+  removeEventListener(callback: (event: AMIEvent) => void) {
+    const index = this.eventCallbacks.indexOf(callback);
+    if (index > -1) {
+      this.eventCallbacks.splice(index, 1);
+    }
+  }
+
+  removeStatusListener(callback: (connected: boolean) => void) {
+    const index = this.statusCallbacks.indexOf(callback);
+    if (index > -1) {
+      this.statusCallbacks.splice(index, 1);
+    }
+  }
+}
+
+// Create singleton instance
+export const amiBridgeClient = new AMIBridgeClient({
+  serverUrl: 'http://localhost:3001',
+  websocketUrl: 'ws://localhost:8080'
+});
+
+export default AMIBridgeClient;
