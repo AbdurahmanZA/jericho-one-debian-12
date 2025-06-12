@@ -2,6 +2,7 @@
 #!/bin/bash
 
 # FreePBX AMI Bridge - Restart Script
+# Network: FreePBX (192.168.0.5) <-> CRM (192.168.0.132)
 
 echo "=== FreePBX AMI Bridge Restart Script ==="
 
@@ -28,9 +29,16 @@ if [ ! -z "$NEW_PID" ]; then
     echo "Process ID: $NEW_PID"
     echo "Log file: /var/www/html/freepbx-crm/server/ami-bridge.log"
     echo ""
+    echo "Network Configuration:"
+    echo "  FreePBX Server: 192.168.0.5:5038 (AMI)"
+    echo "  CRM Server: 192.168.0.132 (Frontend)"
+    echo "  AMI Bridge: 192.168.0.5:3001 (HTTP API)"
+    echo "  WebSocket: 192.168.0.5:8080"
+    echo ""
     echo "Server URLs:"
     echo "  HTTP API: http://192.168.0.5:3001"
     echo "  WebSocket: ws://192.168.0.5:8080"
+    echo "  CRM Frontend: http://192.168.0.132"
     echo ""
     echo "To check status: curl http://192.168.0.5:3001/api/ami/status"
     echo "To view logs: tail -f /var/www/html/freepbx-crm/server/ami-bridge.log"

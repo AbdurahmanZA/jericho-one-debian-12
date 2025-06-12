@@ -1,4 +1,3 @@
-
 #!/bin/bash
 
 # FreePBX CentOS 7 AMI Bridge - Update Deployment Script
@@ -134,12 +133,12 @@ if [ -z "$AMI_PASSWORD" ]; then
     fi
 fi
 
-# Create configuration file with admin credentials
-log "Creating configuration file..."
+# Create configuration file with correct network IPs
+log "Creating configuration file with network IPs..."
 cat > config.json << EOF
 {
   "ami": {
-    "host": "127.0.0.1",
+    "host": "192.168.0.5",
     "port": 5038,
     "username": "admin",
     "password": "$AMI_PASSWORD"
@@ -149,8 +148,9 @@ cat > config.json << EOF
     "websocketPort": 8080
   },
   "security": {
-    "allowedOrigins": ["*"],
-    "corsEnabled": true
+    "allowedOrigins": ["http://localhost:5173", "http://192.168.0.132", "http://192.168.0.132/crm"],
+    "corsEnabled": true,
+    "apiKey": "your-api-key-here"
   },
   "logging": {
     "level": "info",
@@ -702,11 +702,12 @@ if [ ! -z "$NEW_PID" ]; then
     log "Server directory: $SERVER_DIR"
     log "Log file: $SERVER_DIR/ami-bridge.log"
     log ""
-    log "Configuration:"
-    log "  AMI Host: 127.0.0.1:5038"
+    log "Network Configuration:"
+    log "  FreePBX Host: 192.168.0.5:5038"
+    log "  CRM Host: 192.168.0.132"
     log "  AMI User: admin"
-    log "  HTTP API: http://$(hostname -I | awk '{print $1}'):3001"
-    log "  WebSocket: ws://$(hostname -I | awk '{print $1}'):8080"
+    log "  HTTP API: http://192.168.0.5:3001"
+    log "  WebSocket: ws://192.168.0.5:8080"
     log ""
     log "Testing connection:"
     sleep 2
@@ -731,7 +732,12 @@ log "Update deployment completed successfully!"
 log "Directory used: $SERVER_DIR"
 log "Configuration file: $SERVER_DIR/config.json"
 log ""
+log "Network Setup:"
+log "  FreePBX Server: 192.168.0.5"
+log "  CRM Server: 192.168.0.132"
+log "  AMI Bridge: Running on FreePBX server (192.168.0.5)"
+log ""
 log "To customize credentials later, edit: $SERVER_DIR/config.json"
 log "Then restart with: pkill -f node.*ami-bridge.js && cd $SERVER_DIR && nohup node ami-bridge.js > ami-bridge.log 2>&1 &"
 log ""
-log "You can now test extension fetching in your CRM interface."
+log "You can now test extension fetching in your CRM interface at http://192.168.0.132"
