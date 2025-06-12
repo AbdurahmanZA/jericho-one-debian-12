@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAMIContext } from "@/contexts/AMIContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface LeadManagementProps {
   userRole: string;
@@ -43,7 +45,8 @@ interface Lead {
 
 const LeadManagement = ({ userRole }: LeadManagementProps) => {
   const { toast } = useToast();
-  const { initiateCallFromLead } = useAMIContext();
+  const { originateCall, isConnected } = useAMIContext();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedLeads, setSelectedLeads] = useState<number[]>([]);
   const [editingLead, setEditingLead] = useState<number | null>(null);
@@ -145,38 +148,91 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
     return () => window.removeEventListener('newLeadCreated', handleNewLead as EventListener);
   }, [leads, toast]);
 
-  const handleClickToDial = (phone: string, leadName: string, leadId: number) => {
-    // Update lead status to show they've been contacted
-    setLeads(prevLeads => 
-      prevLeads.map(lead => 
-        lead.id === leadId 
-          ? { ...lead, status: 'contacted', lastContact: new Date().toISOString().split('T')[0] }
-          : lead
-      )
-    );
-
-    // Use AMI context to initiate call
-    initiateCallFromLead(leadName, phone, leadId);
-
-    toast({
-      title: "Call Initiated",
-      description: `Call to ${leadName} is being prepared. Switch to Call Center tab to complete the call.`,
-    });
-
-    // Send Discord notification
-    if ((window as any).sendDiscordNotification) {
-      (window as any).sendDiscordNotification(
-        leadName, 
-        'called', 
-        `Call initiated to ${phone}`
-      );
+  const handleClickToDial = async (phone: string, leadName: string, leadId: number) => {
+    if (!user?.extension || !phone) {
+      toast({
+        title: "Missing Information",
+        description: !user?.extension 
+          ? "No extension assigned to your user account. Contact administrator."
+          : "Phone number is missing for this lead.",
+        variant: "destructive"
+      });
+      return;
     }
 
-    console.log('Call initiated from leads:', { phone, leadName, leadId });
+    if (!isConnected) {
+      toast({
+        title: "AMI Not Connected",
+        description: "Please connect to FreePBX AMI in Integration Settings first.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      console.log('Initiating call via unified dialer:', {
+        channel: `PJSIP/${user.extension}`,
+        extension: phone,
+        context: 'from-internal'
+      });
+
+      const success = await originateCall(
+        `PJSIP/${user.extension}`,
+        phone,
+        'from-internal'
+      );
+
+      if (success) {
+        // Update lead status to show they've been contacted
+        setLeads(prevLeads => 
+          prevLeads.map(lead => 
+            lead.id === leadId 
+              ? { ...lead, status: 'contacted', lastContact: new Date().toISOString().split('T')[0] }
+              : lead
+          )
+        );
+
+        // Create lead for unified dialer
+        const event = new CustomEvent('newLeadCreated', { 
+          detail: {
+            name: leadName,
+            phone: phone,
+            notes: `Lead contacted from Lead Management`
+          }
+        });
+        window.dispatchEvent(event);
+
+        toast({
+          title: "Call Initiated",
+          description: `Calling ${leadName} at ${phone} from extension ${user.extension}`,
+        });
+
+        // Send Discord notification
+        if ((window as any).sendDiscordNotification) {
+          (window as any).sendDiscordNotification(
+            leadName, 
+            'called', 
+            `Call initiated to ${phone}`
+          );
+        }
+      } else {
+        throw new Error('Failed to originate call');
+      }
+    } catch (error) {
+      console.error('Call origination error:', error);
+      toast({
+        title: "Call Failed",
+        description: "Could not initiate call. Check AMI connection and extension configuration.",
+        variant: "destructive"
+      });
+    }
   };
 
-  const handleUpdateLeadStatus = (leadId: number, newStatus: string) => {
+  const handleToggleQualified = (leadId: number) => {
     const lead = leads.find(l => l.id === leadId);
+    if (!lead) return;
+
+    const newStatus = lead.status === 'qualified' ? 'new' : 'qualified';
     
     setLeads(prevLeads =>
       prevLeads.map(lead =>
@@ -190,7 +246,7 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
     });
 
     // Send Discord notification
-    if (lead && (window as any).sendDiscordNotification) {
+    if ((window as any).sendDiscordNotification) {
       (window as any).sendDiscordNotification(
         lead.name, 
         'updated', 
@@ -477,6 +533,7 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
                         <Button 
                           size="sm" 
                           onClick={() => handleClickToDial(lead.phone, lead.name, lead.id)}
+                          disabled={!user?.extension || !isConnected}
                           className="bg-green-600 hover:bg-green-700 flex items-center gap-1"
                         >
                           <PhoneCall className="h-3 w-3" />
@@ -496,11 +553,11 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
                         <Button 
                           size="sm" 
                           variant="outline" 
-                          onClick={() => handleUpdateLeadStatus(lead.id, 'qualified')}
+                          onClick={() => handleToggleQualified(lead.id)}
                           className="flex items-center gap-1"
                         >
                           <Edit className="h-3 w-3" />
-                          Qualify
+                          {lead.status === 'qualified' ? 'Unqualify' : 'Qualify'}
                         </Button>
                         <Button size="sm" variant="outline" className="flex items-center gap-1">
                           <MessageSquare className="h-3 w-3" />
