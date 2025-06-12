@@ -79,19 +79,38 @@ check_system() {
 install_nodejs() {
     log "Installing Node.js 16 LTS (CentOS 7 compatible)..."
     
-    # Remove existing Node.js
+    # Remove existing Node.js and any conflicting packages
     yum remove -y nodejs npm 2>/dev/null || true
     
     # Clean up any existing NodeSource repos
     rm -f /etc/yum.repos.d/nodesource*.repo
     
-    # Install Node.js 16 from NodeSource (compatible with CentOS 7)
+    # Clear yum cache
+    yum clean all
+    
+    # Install Node.js 16 specifically for CentOS 7
+    log "Setting up NodeSource repository for Node.js 16..."
     curl -fsSL https://rpm.nodesource.com/setup_16.x | bash -
-    yum install -y nodejs
+    
+    # Verify the repository was added correctly
+    if [ ! -f /etc/yum.repos.d/nodesource-el7.repo ]; then
+        error "NodeSource repository was not properly configured"
+    fi
+    
+    # Install Node.js 16 specifically
+    log "Installing Node.js 16..."
+    yum install -y nodejs-16* || {
+        error "Failed to install Node.js 16. CentOS 7 compatibility issue detected."
+    }
     
     # Verify installation
-    local node_version=$(node --version)
-    local npm_version=$(npm --version)
+    local node_version=$(node --version 2>/dev/null || echo "not installed")
+    local npm_version=$(npm --version 2>/dev/null || echo "not installed")
+    
+    if [[ "$node_version" == "not installed" ]]; then
+        error "Node.js installation failed"
+    fi
+    
     log "Node.js installed: $node_version"
     log "NPM installed: $npm_version"
     
@@ -99,6 +118,9 @@ install_nodejs() {
     if [[ "$node_version" < "v16" ]]; then
         error "Node.js version is too old. Expected v16+, got $node_version"
     fi
+    
+    # Update npm to latest compatible version
+    npm install -g npm@8.19.4 2>/dev/null || warn "Could not update npm"
 }
 
 # Create service user
