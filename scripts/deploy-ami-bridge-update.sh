@@ -1,4 +1,59 @@
 
+#!/bin/bash
+
+# FreePBX CentOS 7 AMI Bridge - Update Deployment Script
+
+echo "=== FreePBX AMI Bridge Update Deployment ==="
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log() {
+    echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')] $1${NC}"
+}
+
+error() {
+    echo -e "${RED}[ERROR] $1${NC}" >&2
+}
+
+warning() {
+    echo -e "${YELLOW}[WARNING] $1${NC}"
+}
+
+# Configuration
+SERVER_DIR="/var/www/html/freepbx-crm/server"
+BACKUP_DIR="/var/www/html/freepbx-crm/backup/$(date +%Y%m%d_%H%M%S)"
+
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+    error "This script must be run as root. Use: sudo $0"
+    exit 1
+fi
+
+# Create backup
+log "Creating backup of current AMI Bridge..."
+mkdir -p "$BACKUP_DIR"
+if [ -f "$SERVER_DIR/ami-bridge.js" ]; then
+    cp "$SERVER_DIR/ami-bridge.js" "$BACKUP_DIR/ami-bridge.js.backup"
+    log "Backup created at: $BACKUP_DIR"
+else
+    warning "No existing ami-bridge.js found to backup"
+fi
+
+# Stop current AMI Bridge
+log "Stopping current AMI Bridge process..."
+pkill -f "node.*ami-bridge.js" || echo "No existing process found"
+sleep 3
+
+# Navigate to server directory
+cd "$SERVER_DIR" || { error "Server directory not found: $SERVER_DIR"; exit 1; }
+
+# Update the AMI Bridge file with the new code
+log "Updating AMI Bridge server code..."
+cat > ami-bridge.js << 'EOF'
 const express = require('express');
 const WebSocket = require('ws');
 const net = require('net');
@@ -78,18 +133,24 @@ class AMIBridge extends EventEmitter {
       }
       message += '\r\n';
 
-      this.pendingActions.set(actionId.toString(), { resolve, reject, timestamp: Date.now() });
+      this.pendingActions.set(actionId.toString(), { 
+        resolve, 
+        reject, 
+        timestamp: Date.now(),
+        action: action.Action
+      });
 
-      console.log('[AMI Bridge] Sending action:', action);
+      console.log('[AMI Bridge] Sending action:', action.Action, 'ID:', actionId);
       this.socket.write(message);
 
-      // Timeout after 10 seconds
+      // Timeout after 15 seconds for PJSIP queries, 10 seconds for others
+      const timeout = action.Action === 'PJSIPShowEndpoints' ? 15000 : 10000;
       setTimeout(() => {
         if (this.pendingActions.has(actionId.toString())) {
           this.pendingActions.delete(actionId.toString());
           reject(new Error('Action timeout'));
         }
-      }, 10000);
+      }, timeout);
     });
   }
 
@@ -125,16 +186,36 @@ class AMIBridge extends EventEmitter {
   }
 
   handleMessage(message) {
-    console.log('[AMI Bridge] Received message:', message);
+    console.log('[AMI Bridge] Received message type:', message.Event || message.Response || 'Unknown');
 
-    // Handle action responses
+    // Handle action responses first
     if (message.ActionID && this.pendingActions.has(message.ActionID)) {
       const pending = this.pendingActions.get(message.ActionID);
+      
+      // For PJSIP endpoints, we need to handle the response differently
+      if (message.Response === 'Success' && pending.action === 'PJSIPShowEndpoints') {
+        // Don't resolve immediately, wait for EndpointList events
+        console.log('[AMI Bridge] PJSIP query accepted, waiting for endpoint data...');
+        return;
+      }
+      
       this.pendingActions.delete(message.ActionID);
       pending.resolve(message);
+      return;
     }
 
-    // Emit all events for real-time updates
+    // Handle PJSIP-specific events
+    if (message.Event === 'EndpointList') {
+      this.emit('pjsip_endpoint_data', message);
+      return;
+    }
+    
+    if (message.Event === 'EndpointListComplete') {
+      this.emit('pjsip_endpoint_complete', message);
+      return;
+    }
+
+    // Emit regular events for real-time updates
     if (message.Event) {
       this.emit('event', message);
     }
@@ -251,81 +332,6 @@ class AMIBridge extends EventEmitter {
       console.error('[AMI Bridge] Get PJSIP endpoints error:', error);
       return [];
     }
-  }
-
-  // Override handleMessage to properly route PJSIP events
-  handleMessage(message) {
-    console.log('[AMI Bridge] Received message type:', message.Event || message.Response || 'Unknown');
-
-    // Handle action responses first
-    if (message.ActionID && this.pendingActions.has(message.ActionID)) {
-      const pending = this.pendingActions.get(message.ActionID);
-      
-      // For PJSIP endpoints, we need to handle the response differently
-      if (message.Response === 'Success' && pending.action === 'PJSIPShowEndpoints') {
-        // Don't resolve immediately, wait for EndpointList events
-        console.log('[AMI Bridge] PJSIP query accepted, waiting for endpoint data...');
-        return;
-      }
-      
-      this.pendingActions.delete(message.ActionID);
-      pending.resolve(message);
-      return;
-    }
-
-    // Handle PJSIP-specific events
-    if (message.Event === 'EndpointList') {
-      this.emit('pjsip_endpoint_data', message);
-      return;
-    }
-    
-    if (message.Event === 'EndpointListComplete') {
-      this.emit('pjsip_endpoint_complete', message);
-      return;
-    }
-
-    // Emit regular events for real-time updates
-    if (message.Event) {
-      this.emit('event', message);
-    }
-  }
-
-  // Override sendAction to track action types
-  sendAction(action) {
-    return new Promise((resolve, reject) => {
-      if (!this.socket || !this.isConnected) {
-        reject(new Error('Not connected to AMI'));
-        return;
-      }
-
-      const actionId = ++this.actionId;
-      action.ActionID = actionId.toString();
-
-      let message = '';
-      for (const [key, value] of Object.entries(action)) {
-        message += `${key}: ${value}\r\n`;
-      }
-      message += '\r\n';
-
-      this.pendingActions.set(actionId.toString(), { 
-        resolve, 
-        reject, 
-        timestamp: Date.now(),
-        action: action.Action
-      });
-
-      console.log('[AMI Bridge] Sending action:', action.Action, 'ID:', actionId);
-      this.socket.write(message);
-
-      // Timeout after 15 seconds for PJSIP queries, 10 seconds for others
-      const timeout = action.Action === 'PJSIPShowEndpoints' ? 15000 : 10000;
-      setTimeout(() => {
-        if (this.pendingActions.has(actionId.toString())) {
-          this.pendingActions.delete(actionId.toString());
-          reject(new Error('Action timeout'));
-        }
-      }, timeout);
-    });
   }
 
   disconnect() {
@@ -493,3 +499,45 @@ process.on('SIGINT', () => {
 });
 
 module.exports = { AMIBridge };
+EOF
+
+# Set proper permissions
+chown asterisk:asterisk ami-bridge.js
+chmod 644 ami-bridge.js
+
+# Start the AMI Bridge server
+log "Starting updated AMI Bridge server..."
+nohup node ami-bridge.js > ami-bridge.log 2>&1 &
+
+# Wait for startup
+sleep 3
+
+# Check if process started successfully
+NEW_PID=$(pgrep -f "node.*ami-bridge.js")
+if [ ! -z "$NEW_PID" ]; then
+    log "✅ AMI Bridge updated and restarted successfully!"
+    log "Process ID: $NEW_PID"
+    log "Log file: $SERVER_DIR/ami-bridge.log"
+    log ""
+    log "Server URLs:"
+    log "  HTTP API: http://192.168.0.5:3001"
+    log "  WebSocket: ws://192.168.0.5:8080"
+    log ""
+    log "Testing PJSIP endpoint API:"
+    sleep 2
+    curl -s "http://192.168.0.5:3001/api/ami/pjsip-endpoints" | python -m json.tool 2>/dev/null || echo "API call completed"
+else
+    error "❌ Failed to start updated AMI Bridge!"
+    error "Check the log for errors: cat $SERVER_DIR/ami-bridge.log"
+    log "Restoring backup..."
+    if [ -f "$BACKUP_DIR/ami-bridge.js.backup" ]; then
+        cp "$BACKUP_DIR/ami-bridge.js.backup" "$SERVER_DIR/ami-bridge.js"
+        nohup node ami-bridge.js > ami-bridge.log 2>&1 &
+        log "Backup restored and started"
+    fi
+    exit 1
+fi
+
+log ""
+log "Update deployment completed successfully!"
+log "You can now test extension fetching in your CRM interface."
