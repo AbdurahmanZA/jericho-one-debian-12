@@ -14,6 +14,12 @@ interface AMIEvent {
   [key: string]: string | undefined;
 }
 
+interface PendingCall {
+  leadName: string;
+  phone: string;
+  leadId: number;
+}
+
 interface AMIContextType {
   isConnected: boolean;
   isConnecting: boolean;
@@ -21,10 +27,14 @@ interface AMIContextType {
   lastEvent: AMIEvent | null;
   callEvents: AMIEvent[];
   config: AMIConfig;
+  pendingCall: PendingCall | null;
+  userExtension: string;
   updateConfig: (newConfig: AMIConfig) => void;
   connect: () => Promise<boolean>;
   disconnect: () => Promise<boolean>;
   originateCall: (channel: string, extension: string, context?: string, callerID?: string) => Promise<boolean>;
+  initiateCallFromLead: (leadName: string, phone: string, leadId: number) => void;
+  clearPendingCall: () => void;
 }
 
 const AMIContext = createContext<AMIContextType | undefined>(undefined);
@@ -47,12 +57,16 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [lastEvent, setLastEvent] = useState<AMIEvent | null>(null);
   const [callEvents, setCallEvents] = useState<AMIEvent[]>([]);
+  const [pendingCall, setPendingCall] = useState<PendingCall | null>(null);
   const [config, setConfig] = useState<AMIConfig>({
     host: localStorage.getItem('ami_host') || '127.0.0.1',
     port: localStorage.getItem('ami_port') || '5038',
     username: localStorage.getItem('ami_username') || 'crm-user',
     password: localStorage.getItem('ami_password') || ''
   });
+
+  // Generate user extension based on current user
+  const userExtension = localStorage.getItem('current_user_extension') || '1001';
 
   useEffect(() => {
     // Set up event listeners for AMI bridge
@@ -128,6 +142,7 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
       setConnectionError(null);
       setCallEvents([]);
       setLastEvent(null);
+      setPendingCall(null);
       return success;
     } catch (error) {
       console.error('Disconnect error:', error);
@@ -154,6 +169,14 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
     }
   };
 
+  const initiateCallFromLead = (leadName: string, phone: string, leadId: number) => {
+    setPendingCall({ leadName, phone, leadId });
+  };
+
+  const clearPendingCall = () => {
+    setPendingCall(null);
+  };
+
   const contextValue: AMIContextType = {
     isConnected,
     isConnecting,
@@ -161,10 +184,14 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
     lastEvent,
     callEvents,
     config,
+    pendingCall,
+    userExtension,
     updateConfig,
     connect,
     disconnect,
-    originateCall
+    originateCall,
+    initiateCallFromLead,
+    clearPendingCall
   };
 
   return (
