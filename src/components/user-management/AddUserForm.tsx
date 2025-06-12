@@ -6,11 +6,23 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { UserPlus } from "lucide-react";
+import { UserPlus, RefreshCw, Phone, CheckCircle, AlertCircle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useState, useEffect } from "react";
+import { useToast } from "@/hooks/use-toast";
 import * as z from "zod";
 import { CreateUserData } from "@/services/userService";
+import { amiBridgeClient } from "@/services/amiBridgeClient";
+import { useAMIContext } from "@/contexts/AMIContext";
+
+interface PJSIPPeer {
+  objectName: string;
+  endpoint: string;
+  status: string;
+  contact?: string;
+}
 
 const formSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -32,6 +44,11 @@ interface AddUserFormProps {
 }
 
 const AddUserForm = ({ onSave, onCancel, editingUser }: AddUserFormProps) => {
+  const { toast } = useToast();
+  const { isConnected } = useAMIContext();
+  const [extensions, setExtensions] = useState<PJSIPPeer[]>([]);
+  const [loadingExtensions, setLoadingExtensions] = useState(false);
+
   const permissions = [
     { id: 'view_leads', label: 'View Leads' },
     { id: 'edit_leads', label: 'Edit Leads' },
@@ -53,6 +70,59 @@ const AddUserForm = ({ onSave, onCancel, editingUser }: AddUserFormProps) => {
       permissions: editingUser?.permissions || []
     }
   });
+
+  const fetchExtensions = async () => {
+    if (!isConnected) {
+      toast({
+        title: "AMI Not Connected",
+        description: "Connect to AMI Bridge first to fetch extensions",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setLoadingExtensions(true);
+    try {
+      const endpoints = await amiBridgeClient.getPJSIPEndpoints();
+      setExtensions(endpoints);
+      
+      if (endpoints.length === 0) {
+        toast({
+          title: "No Extensions Found",
+          description: "No PJSIP endpoints found. Check FreePBX configuration.",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch extensions:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch PJSIP extensions",
+        variant: "destructive"
+      });
+    } finally {
+      setLoadingExtensions(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isConnected) {
+      fetchExtensions();
+    }
+  }, [isConnected]);
+
+  const getStatusBadge = (status: string) => {
+    const isOnline = status.toLowerCase().includes('not_inuse') || status.toLowerCase().includes('inuse');
+    return (
+      <Badge 
+        variant={isOnline ? "default" : "secondary"}
+        className={`ml-2 ${isOnline ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}
+      >
+        {isOnline ? <CheckCircle className="w-3 h-3 mr-1" /> : <AlertCircle className="w-3 h-3 mr-1" />}
+        {isOnline ? 'Online' : 'Offline'}
+      </Badge>
+    );
+  };
 
   const onSubmit = (values: z.infer<typeof formSchema>) => {
     // Transform the form data to match CreateUserData interface
@@ -113,10 +183,50 @@ const AddUserForm = ({ onSave, onCancel, editingUser }: AddUserFormProps) => {
                 name="extension"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Extension Number</FormLabel>
-                    <FormControl>
-                      <Input placeholder="1001" {...field} />
-                    </FormControl>
+                    <FormLabel>PJSIP Extension</FormLabel>
+                    <div className="flex items-center gap-2">
+                      <Select onValueChange={field.onChange} value={field.value} disabled={!isConnected}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder={isConnected ? "Select PJSIP extension" : "AMI not connected"} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {extensions.length === 0 && isConnected ? (
+                            <SelectItem value="no-extensions" disabled>
+                              No extensions found
+                            </SelectItem>
+                          ) : (
+                            extensions.map((ext) => (
+                              <SelectItem key={ext.endpoint} value={ext.endpoint}>
+                                <div className="flex items-center justify-between w-full">
+                                  <div className="flex items-center">
+                                    <Phone className="h-4 w-4 mr-2" />
+                                    <span>PJSIP/{ext.endpoint}</span>
+                                  </div>
+                                  {getStatusBadge(ext.status)}
+                                </div>
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={fetchExtensions}
+                        disabled={loadingExtensions || !isConnected}
+                        className="h-10 px-3"
+                      >
+                        <RefreshCw className={`h-4 w-4 ${loadingExtensions ? 'animate-spin' : ''}`} />
+                      </Button>
+                    </div>
+                    {!isConnected && (
+                      <p className="text-xs text-muted-foreground">
+                        Connect to AMI Bridge to load available PJSIP extensions
+                      </p>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}

@@ -7,6 +7,7 @@ interface User {
   name: string;
   role: string;
   originalRole: string; // Track the original role for permissions
+  extension?: string; // Add extension to user context
 }
 
 interface AuthContextType {
@@ -22,28 +23,31 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Mock user database
+// Mock user database - updated to include extensions
 const USERS = [
   {
     id: '1',
     email: 'admin@abdurahman.co.za',
     password: 'M@rwan1395',
     name: 'Admin User',
-    role: 'Administrator'
+    role: 'Administrator',
+    extension: '1000'
   },
   {
     id: '2',
     email: 'manager@abdurahman.co.za',
     password: 'manager123',
     name: 'Manager User',
-    role: 'Manager'
+    role: 'Manager',
+    extension: '1001'
   },
   {
     id: '3',
     email: 'agent@abdurahman.co.za',
     password: 'agent123',
     name: 'Agent User',
-    role: 'Agent'
+    role: 'Agent',
+    extension: '1002'
   }
 ];
 
@@ -78,7 +82,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         email: foundUser.email,
         name: foundUser.name,
         role: foundUser.role,
-        originalRole: foundUser.role
+        originalRole: foundUser.role,
+        extension: foundUser.extension
       };
       
       setUser(userSession);

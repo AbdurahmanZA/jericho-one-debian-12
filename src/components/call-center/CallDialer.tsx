@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -5,10 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Phone, PhoneCall, Users } from "lucide-react";
+import { Phone, PhoneCall, Users, User } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAMIContext } from "@/contexts/AMIContext";
-import ExtensionSelector from "./ExtensionSelector";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface CallDialerProps {
   onCallInitiated: (callData: {
@@ -31,7 +32,7 @@ interface CallDialerProps {
 const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProps) => {
   const { toast } = useToast();
   const { isConnected, originateCall } = useAMIContext();
-  const [extension, setExtension] = useState(localStorage.getItem('user_extension') || '');
+  const { user } = useAuth();
   const [phoneNumber, setPhoneNumber] = useState('');
   const [contactName, setContactName] = useState('');
   const [callNotes, setCallNotes] = useState('');
@@ -81,10 +82,12 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
       leadId = `manual_${Date.now()}`;
     }
 
-    if (!extension || !targetPhone) {
+    if (!user?.extension || !targetPhone) {
       toast({
         title: "Missing Information",
-        description: "Please select your extension and enter phone number to call.",
+        description: !user?.extension 
+          ? "No extension assigned to your user account. Contact administrator."
+          : "Please enter phone number to call.",
         variant: "destructive"
       });
       return;
@@ -100,19 +103,17 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
     }
 
     try {
-      localStorage.setItem('user_extension', extension);
-
       console.log('Initiating real AMI call:', {
-        channel: `PJSIP/${extension}`,
+        channel: `PJSIP/${user.extension}`,
         extension: targetPhone,
         context: 'from-internal'
       });
 
-      // Use real AMI originate call
+      // Use real AMI originate call with user's assigned extension
       const success = await originateCall(
-        `PJSIP/${extension}`, // Channel for PJSIP extension
-        targetPhone,           // Number to call
-        'from-internal'        // Context
+        `PJSIP/${user.extension}`, // Channel for user's assigned PJSIP extension
+        targetPhone,               // Number to call
+        'from-internal'            // Context
       );
 
       if (success) {
@@ -130,7 +131,7 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
         
         toast({
           title: "Call Initiated",
-          description: `Calling ${targetName} at ${targetPhone} from PJSIP extension ${extension}`,
+          description: `Calling ${targetName} at ${targetPhone} from PJSIP extension ${user.extension}`,
         });
 
         // Clear form after successful call
@@ -167,12 +168,26 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <ExtensionSelector
-          value={extension}
-          onChange={setExtension}
-          disabled={disabled}
-          isConnected={isConnected}
-        />
+        {/* Display current user and extension */}
+        <div className="bg-muted p-3 rounded-lg">
+          <div className="flex items-center gap-2 text-sm">
+            <User className="h-4 w-4" />
+            <span className="font-medium">Agent:</span>
+            <span>{user?.name}</span>
+            {user?.extension && (
+              <>
+                <span className="text-muted-foreground">|</span>
+                <Phone className="h-4 w-4" />
+                <span>PJSIP/{user.extension}</span>
+              </>
+            )}
+          </div>
+          {!user?.extension && (
+            <p className="text-xs text-destructive mt-1">
+              No extension assigned. Contact administrator to assign an extension.
+            </p>
+          )}
+        </div>
 
         <div>
           <Label htmlFor="callType">Call Type</Label>
@@ -243,16 +258,22 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
 
         <Button 
           onClick={initiateCall} 
-          disabled={disabled || !extension || (callType === 'manual' && !phoneNumber) || (callType === 'lead' && !selectedLead) || !isConnected}
+          disabled={disabled || !user?.extension || (callType === 'manual' && !phoneNumber) || (callType === 'lead' && !selectedLead) || !isConnected}
           className="w-full"
         >
           <PhoneCall className="h-4 w-4 mr-2" />
-          {isConnected ? 'Make Call via AMI' : 'AMI Not Connected'}
+          {!isConnected ? 'AMI Not Connected' : !user?.extension ? 'No Extension Assigned' : 'Make Call via AMI'}
         </Button>
         
         {!isConnected && (
           <p className="text-sm text-muted-foreground text-center">
             Connect to FreePBX AMI in Integration Settings to make real calls
+          </p>
+        )}
+
+        {!user?.extension && isConnected && (
+          <p className="text-sm text-muted-foreground text-center">
+            Contact administrator to assign a PJSIP extension to your account
           </p>
         )}
       </CardContent>
