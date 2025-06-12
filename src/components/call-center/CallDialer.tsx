@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -109,11 +108,10 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
         context: 'from-internal'
       });
 
-      // Use real AMI originate call with user's assigned extension
       const success = await originateCall(
-        `PJSIP/${user.extension}`, // Channel for user's assigned PJSIP extension
-        targetPhone,               // Number to call
-        'from-internal'            // Context
+        `PJSIP/${user.extension}`,
+        targetPhone,
+        'from-internal'
       );
 
       if (success) {
@@ -134,7 +132,6 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
           description: `Calling ${targetName} at ${targetPhone} from PJSIP extension ${user.extension}`,
         });
 
-        // Clear form after successful call
         if (callType === 'manual') {
           setPhoneNumber('');
           setContactName('');
@@ -155,99 +152,93 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Phone className="h-5 w-5" />
-          Call Dialer
+    <Card className="h-fit">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <Phone className="h-4 w-4" />
+          Quick Dial
           {!isConnected && (
-            <span className="text-sm text-destructive font-normal">
+            <span className="text-xs text-destructive font-normal">
               (AMI Not Connected)
             </span>
           )}
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Display current user and extension */}
-        <div className="bg-muted p-3 rounded-lg">
-          <div className="flex items-center gap-2 text-sm">
-            <User className="h-4 w-4" />
-            <span className="font-medium">Agent:</span>
-            <span>{user?.name}</span>
+      <CardContent className="space-y-3">
+        {/* Compact agent info */}
+        <div className="bg-muted p-2 rounded text-xs">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1">
+              <User className="h-3 w-3" />
+              {user?.name}
+            </span>
             {user?.extension && (
-              <>
-                <span className="text-muted-foreground">|</span>
-                <Phone className="h-4 w-4" />
-                <span>PJSIP/{user.extension}</span>
-              </>
+              <span className="flex items-center gap-1">
+                <Phone className="h-3 w-3" />
+                PJSIP/{user.extension}
+              </span>
             )}
           </div>
           {!user?.extension && (
-            <p className="text-xs text-destructive mt-1">
-              No extension assigned. Contact administrator to assign an extension.
+            <p className="text-destructive mt-1">
+              No extension assigned
             </p>
           )}
         </div>
 
-        <div>
-          <Label htmlFor="callType">Call Type</Label>
-          <Select value={callType} onValueChange={setCallType}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select call type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="manual">Manual Dial</SelectItem>
-              <SelectItem value="lead">Call Lead</SelectItem>
-            </SelectContent>
-          </Select>
+        {/* Compact call type selector */}
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            variant={callType === 'manual' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setCallType('manual')}
+            className="text-xs"
+          >
+            Manual
+          </Button>
+          <Button
+            variant={callType === 'lead' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setCallType('lead')}
+            className="text-xs"
+          >
+            Lead
+          </Button>
         </div>
 
         {callType === 'manual' && (
-          <>
+          <div className="space-y-2">
             <div>
-              <Label htmlFor="phone">Phone Number</Label>
               <Input
-                id="phone"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
-                placeholder="e.g., +1234567890"
+                placeholder="Phone number"
+                className="text-sm"
               />
             </div>
             <div>
-              <Label htmlFor="contactName">Contact Name</Label>
               <Input
-                id="contactName"
                 value={contactName}
                 onChange={(e) => setContactName(e.target.value)}
                 placeholder="Contact name (optional)"
+                className="text-sm"
               />
             </div>
-            <div>
-              <Label htmlFor="callNotes">Initial Notes</Label>
-              <Textarea
-                id="callNotes"
-                value={callNotes}
-                onChange={(e) => setCallNotes(e.target.value)}
-                placeholder="Notes about this contact..."
-                rows={3}
-              />
-            </div>
-          </>
+          </div>
         )}
 
         {callType === 'lead' && (
           <div>
-            <Label htmlFor="lead">Select Lead</Label>
             <Select value={selectedLead} onValueChange={setSelectedLead}>
-              <SelectTrigger>
-                <SelectValue placeholder="Choose a lead to call" />
+              <SelectTrigger className="text-sm">
+                <SelectValue placeholder="Choose lead" />
               </SelectTrigger>
               <SelectContent>
                 {testLeads.map((lead) => (
                   <SelectItem key={lead.id} value={lead.id}>
                     <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4" />
-                      <span>{lead.name} - {lead.phone}</span>
+                      <Users className="h-3 w-3" />
+                      <span className="text-sm">{lead.name} - {lead.phone}</span>
                     </div>
                   </SelectItem>
                 ))}
@@ -260,20 +251,15 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
           onClick={initiateCall} 
           disabled={disabled || !user?.extension || (callType === 'manual' && !phoneNumber) || (callType === 'lead' && !selectedLead) || !isConnected}
           className="w-full"
+          size="sm"
         >
-          <PhoneCall className="h-4 w-4 mr-2" />
-          {!isConnected ? 'AMI Not Connected' : !user?.extension ? 'No Extension Assigned' : 'Make Call via AMI'}
+          <PhoneCall className="h-3 w-3 mr-2" />
+          {!isConnected ? 'AMI Not Connected' : !user?.extension ? 'No Extension' : 'Call'}
         </Button>
         
         {!isConnected && (
-          <p className="text-sm text-muted-foreground text-center">
-            Connect to FreePBX AMI in Integration Settings to make real calls
-          </p>
-        )}
-
-        {!user?.extension && isConnected && (
-          <p className="text-sm text-muted-foreground text-center">
-            Contact administrator to assign a PJSIP extension to your account
+          <p className="text-xs text-muted-foreground text-center">
+            Connect AMI in Integration Settings
           </p>
         )}
       </CardContent>

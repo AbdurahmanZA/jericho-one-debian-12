@@ -278,74 +278,64 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
   };
 
   return (
-    <div className="space-y-6">
-      {/* SIMULATION WARNING */}
-      <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>
-          <h3 className="font-bold text-red-900">⚠️ BROWSER SIMULATION MODE ⚠️</h3>
-        </div>
-        <div className="text-sm text-red-800 space-y-1">
-          <p><strong>This Call Center is running in simulation mode because:</strong></p>
-          <ul className="list-disc list-inside ml-4 space-y-1">
-            <li>Browsers cannot make raw TCP connections to FreePBX AMI</li>
-            <li>Real AMI calls require server-side implementation</li>
-            <li>The exact call format being sent is logged in browser console</li>
-          </ul>
-          <p className="mt-2"><strong>To see real AMI commands:</strong> Open browser developer tools → Console tab</p>
-          <p><strong>Real FreePBX Integration:</strong> Requires WebSocket proxy or server-side AMI bridge</p>
-        </div>
-      </div>
-
-      {/* AMI Status Display */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <div className="flex items-center justify-between">
+    <div className="space-y-4">
+      {/* Compact Status Display */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <div className="flex items-center justify-between text-sm">
           <div>
-            <h3 className="font-medium text-blue-900">
-              PJSIP Extension: PJSIP/{userExtension} | User: {user?.name}
-            </h3>
-            <p className="text-sm text-blue-700">
-              AMI Status: {isConnected ? '🟢 Simulated Connected' : '🔴 Disconnected'}
-            </p>
+            <span className="font-medium text-blue-900">
+              Agent: {user?.name} | PJSIP/{userExtension}
+            </span>
+            <span className="ml-4 text-blue-700">
+              AMI: {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
+            </span>
           </div>
-          <div className="text-sm text-blue-600">
-            Simulated PJSIP calls from PJSIP/{userExtension}
-          </div>
+          {callEvents.length > 0 && (
+            <div className="text-xs text-blue-600">
+              Latest: {callEvents[0].event}
+            </div>
+          )}
         </div>
-        {callEvents.length > 0 && (
-          <div className="mt-2 text-xs text-blue-600">
-            Latest Simulated Event: {callEvents[0].event} - {callEvents[0].channel || callEvents[0].status || 'System'}
-          </div>
-        )}
       </div>
 
-      <CallDialer 
-        onCallInitiated={handleCallInitiated}
-        onLeadCreated={handleLeadCreated}
-        disabled={!!activeCall}
-      />
+      {/* Main Layout - Agent Workspace */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        {/* Left Column - Dialer (1/4 width) */}
+        <div className="lg:col-span-1">
+          <CallDialer 
+            onCallInitiated={handleCallInitiated}
+            onLeadCreated={handleLeadCreated}
+            disabled={!!activeCall}
+          />
+        </div>
 
-      {activeCall && (
-        <ActiveCallDisplay
-          activeCall={activeCall}
-          isRecording={isRecording}
-          isMuted={isMuted}
-          onEndCall={endCall}
-          onToggleRecording={toggleRecording}
-          onToggleMute={toggleMute}
-          onHoldCall={holdCall}
-        />
-      )}
+        {/* Right Column - Main Work Area (3/4 width) */}
+        <div className="lg:col-span-3 space-y-4">
+          {activeCall && (
+            <ActiveCallDisplay
+              activeCall={activeCall}
+              isRecording={isRecording}
+              isMuted={isMuted}
+              onEndCall={endCall}
+              onToggleRecording={toggleRecording}
+              onToggleMute={toggleMute}
+              onHoldCall={holdCall}
+            />
+          )}
 
-      <PostCallActions
-        callNotes={callNotes}
-        callOutcome={callOutcome}
-        onNotesChange={setCallNotes}
-        onOutcomeChange={setCallOutcome}
-        onSaveNotes={saveCallNotes}
-      />
-
-      <CallHistory calls={callHistory} />
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <PostCallActions
+              callNotes={callNotes}
+              callOutcome={callOutcome}
+              onNotesChange={setCallNotes}
+              onOutcomeChange={setCallOutcome}
+              onSaveNotes={saveCallNotes}
+            />
+            
+            <CallHistory calls={callHistory} />
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
