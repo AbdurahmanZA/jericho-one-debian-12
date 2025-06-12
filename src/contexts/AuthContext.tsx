@@ -6,12 +6,16 @@ interface User {
   email: string;
   name: string;
   role: string;
+  originalRole: string; // Track the original role for permissions
 }
 
 interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
+  switchRole: (newRole: string) => void;
+  canSwitchRoles: boolean;
+  availableRoles: string[];
   isAuthenticated: boolean;
   isLoading: boolean;
 }
@@ -73,7 +77,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         id: foundUser.id,
         email: foundUser.email,
         name: foundUser.name,
-        role: foundUser.role
+        role: foundUser.role,
+        originalRole: foundUser.role
       };
       
       setUser(userSession);
@@ -91,10 +96,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     localStorage.removeItem('crm_user');
   };
 
+  const switchRole = (newRole: string) => {
+    if (!user || !canSwitchRoles) return;
+    
+    const updatedUser = { ...user, role: newRole };
+    setUser(updatedUser);
+    localStorage.setItem('crm_user', JSON.stringify(updatedUser));
+  };
+
+  // Determine if user can switch roles and what roles are available
+  const canSwitchRoles = user ? user.originalRole === 'Administrator' || user.originalRole === 'Manager' : false;
+  
+  const getAvailableRoles = () => {
+    if (!user) return [];
+    
+    if (user.originalRole === 'Administrator') {
+      return ['Administrator', 'Manager', 'Agent'];
+    } else if (user.originalRole === 'Manager') {
+      return ['Manager', 'Agent'];
+    }
+    
+    return [user.originalRole];
+  };
+
   const value = {
     user,
     login,
     logout,
+    switchRole,
+    canSwitchRoles,
+    availableRoles: getAvailableRoles(),
     isAuthenticated: !!user,
     isLoading
   };

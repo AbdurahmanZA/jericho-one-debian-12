@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { LogOut, User } from 'lucide-react';
+import RoleSwitcher from '@/components/auth/RoleSwitcher';
 
 const Header = () => {
   const { user, logout } = useAuth();
@@ -26,11 +27,18 @@ const Header = () => {
         
         {user && (
           <div className="flex items-center gap-4">
+            <RoleSwitcher />
+            
             <div className="flex items-center gap-2 text-sm">
               <User className="h-4 w-4" />
               <div className="text-right">
                 <p className="font-medium">{user.name}</p>
-                <p className="text-xs text-muted-foreground">{user.role}</p>
+                <p className="text-xs text-muted-foreground">
+                  {user.role}
+                  {user.originalRole !== user.role && (
+                    <span className="text-primary"> (as {user.role})</span>
+                  )}
+                </p>
               </div>
             </div>
             
