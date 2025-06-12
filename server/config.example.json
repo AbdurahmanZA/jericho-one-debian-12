@@ -1,7 +1,7 @@
 
 {
   "ami": {
-    "host": "127.0.0.1",
+    "host": "192.168.0.5",
     "port": 5038,
     "username": "admin",
     "password": "amp111"
@@ -11,7 +11,7 @@
     "websocketPort": 8080
   },
   "security": {
-    "allowedOrigins": ["http://localhost:5173", "http://192.168.0.5", "http://192.168.0.5/crm"],
+    "allowedOrigins": ["http://localhost:5173", "http://192.168.0.132", "http://192.168.0.132/crm"],
     "apiKey": "your-api-key-here"
   }
 }
