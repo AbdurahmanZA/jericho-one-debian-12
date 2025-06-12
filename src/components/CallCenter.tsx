@@ -5,14 +5,12 @@ import { useAMIContext } from "@/contexts/AMIContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { callRecordsService, CallRecord } from "@/services/callRecordsService";
 import CallHistory from "./call-center/CallHistory";
-import UnifiedDialer from "./unified-dialer/UnifiedDialer";
 
 interface CallCenterProps {
   userRole: string;
 }
 
 const CallCenter = ({ userRole }: CallCenterProps) => {
-  const { toast } = useToast();
   const { user } = useAuth();
   const { isConnected, userExtension } = useAMIContext();
   const [callHistory, setCallHistory] = useState<CallRecord[]>([]);
@@ -35,26 +33,8 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
     }
   }, [user, userExtension, isConnected]);
 
-  const handleLeadCreated = (leadData: { name: string; phone: string; notes: string }) => {
-    console.log('New lead created from call:', leadData);
-    
-    toast({
-      title: "Lead Created",
-      description: `New lead "${leadData.name}" has been added to the system.`,
-    });
-
-    // Send Discord notification if available
-    if ((window as any).sendDiscordNotification) {
-      (window as any).sendDiscordNotification(
-        leadData.name, 
-        'created', 
-        `New lead created from call to ${leadData.phone}`
-      );
-    }
-  };
-
   return (
-    <div className="space-y-6 pb-32"> {/* Add bottom padding for unified dialer */}
+    <div className="space-y-6">
       {/* Compact Status Display */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
         <div className="flex items-center justify-between text-sm">
@@ -74,8 +54,10 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
         <CallHistory calls={callHistory} />
       </div>
 
-      {/* Unified Dialer - Fixed at bottom */}
-      <UnifiedDialer onLeadCreated={handleLeadCreated} />
+      {/* Note: Unified dialer is now global and handled in Index.tsx */}
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center text-gray-600">
+        <p>📞 Phone dialer is available at the bottom of the screen across all tabs</p>
+      </div>
     </div>
   );
 };

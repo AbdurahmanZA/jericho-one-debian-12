@@ -1,3 +1,4 @@
+
 #!/bin/bash
 
 # FreePBX CentOS 7 AMI Bridge Complete Installation Script
@@ -36,6 +37,17 @@ AMI_BRIDGE_DIR="/opt/ami-bridge"
 AMI_USER="admin"
 AMI_PASSWORD="amp111"
 
+# Auto-detect server IP
+detect_server_ip() {
+    local ip=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "")
+    if [ -z "$ip" ]; then
+        ip=$(ip route get 8.8.8.8 | grep -oP 'src \K\S+' 2>/dev/null || echo "127.0.0.1")
+    fi
+    echo "$ip"
+}
+
+SERVER_IP=$(detect_server_ip)
+
 # Check if running as root
 check_root() {
     if [ "$EUID" -ne 0 ]; then
@@ -54,6 +66,7 @@ check_system() {
     
     local os_version=$(cat /etc/redhat-release)
     log "Detected OS: $os_version"
+    log "Server IP: $SERVER_IP"
     
     # Check if CentOS 7
     if ! echo "$os_version" | grep -q "CentOS.*7"; then
@@ -280,7 +293,7 @@ create_ami_bridge_app() {
 }
 EOF
 
-    # Create configuration file with proper CORS origins
+    # Create configuration file with comprehensive CORS origins
     cat > config.json << EOF
 {
   "ami": {
@@ -295,12 +308,19 @@ EOF
   },
   "security": {
     "allowed_origins": [
-      "http://localhost", 
+      "http://localhost",
       "http://127.0.0.1",
+      "http://$SERVER_IP",
+      "http://$SERVER_IP:80",
+      "http://$SERVER_IP:3000",
+      "http://$SERVER_IP/crm",
+      "https://$SERVER_IP",
+      "https://$SERVER_IP:443",
       "http://192.168.0.132",
       "http://192.168.0.132:80",
       "http://192.168.0.132:3000",
       "http://192.168.0.132/crm",
+      "https://192.168.0.132",
       "*"
     ],
     "rate_limit": {
@@ -311,7 +331,7 @@ EOF
 }
 EOF
 
-    # Create main application file (abbreviated for brevity)
+    # Create main application file
     cat > ami-bridge.js << 'EOF'
 const express = require('express');
 const WebSocket = require('ws');
@@ -327,8 +347,16 @@ const app = express();
 const server = require('http').createServer(app);
 const wss = new WebSocket.Server({ server });
 
+// CORS configuration
+const corsOptions = {
+    origin: config.security.allowed_origins,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(bodyParser.json());
 
 // AMI Connection management
@@ -346,12 +374,18 @@ function handleAMIEvent(event) {
     // Broadcast to all WebSocket clients
     const message = {
         type: 'event',
-        data: event
+        data: event,
+        timestamp: new Date().toISOString()
     };
     
     clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify(message));
+            try {
+                client.send(JSON.stringify(message));
+            } catch (error) {
+                console.error('[AMI Bridge] Error sending to client:', error);
+                clients.delete(client);
+            }
         }
     });
 }
@@ -449,17 +483,18 @@ function sendAMIAction(action) {
         }
         actionString += '\r\n';
         
+        console.log('[AMI Bridge] Sending action:', action.Action);
         amiConnection.write(actionString);
         
         // Simple resolve for now - in production, you'd want to track responses
-        setTimeout(() => resolve({ success: true }), 1000);
+        setTimeout(() => resolve({ success: true, actionId }), 1000);
     });
 }
 
 // API Routes
 app.post('/api/ami/connect', async (req, res) => {
     try {
-        const result = await connectToAMI(req.body);
+        const result = await connectToAMI(req.body || config.ami);
         res.json({ success: result });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -480,21 +515,53 @@ app.post('/api/ami/disconnect', async (req, res) => {
 app.get('/api/ami/status', (req, res) => {
     res.json({ 
         connected: isConnected, 
-        timestamp: new Date().toISOString() 
+        timestamp: new Date().toISOString(),
+        clients: clients.size
     });
 });
 
 app.post('/api/ami/originate', async (req, res) => {
     try {
-        const { channel, extension, context, callerID } = req.body;
+        const { channel, extension, context, callerID, priority } = req.body;
+        
+        if (!channel || !extension) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Channel and extension are required' 
+            });
+        }
         
         const action = {
             Action: 'Originate',
             Channel: channel,
             Exten: extension,
             Context: context || 'from-internal',
-            Priority: 1,
-            CallerID: callerID || 'CRM System'
+            Priority: priority || 1,
+            CallerID: callerID || 'CRM System',
+            Timeout: 30000
+        };
+        
+        const result = await sendAMIAction(action);
+        res.json({ success: true, data: result });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/ami/hangup', async (req, res) => {
+    try {
+        const { channel } = req.body;
+        
+        if (!channel) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Channel is required' 
+            });
+        }
+        
+        const action = {
+            Action: 'Hangup',
+            Channel: channel
         };
         
         const result = await sendAMIAction(action);
@@ -506,22 +573,37 @@ app.post('/api/ami/originate', async (req, res) => {
 
 app.get('/api/ami/channels', async (req, res) => {
     try {
-        // In a real implementation, you'd send a CoreShowChannels action
-        res.json({ success: true, data: [] });
+        const action = {
+            Action: 'CoreShowChannels'
+        };
+        
+        const result = await sendAMIAction(action);
+        res.json({ success: true, data: result });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.json({ 
+        status: 'ok', 
+        ami_connected: isConnected,
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString()
+    });
+});
+
 // WebSocket handling
-wss.on('connection', (ws) => {
-    console.log('[AMI Bridge] WebSocket client connected');
+wss.on('connection', (ws, req) => {
+    console.log('[AMI Bridge] WebSocket client connected from:', req.connection.remoteAddress);
     clients.add(ws);
     
     // Send current status
     ws.send(JSON.stringify({
         type: 'status',
-        connected: isConnected
+        connected: isConnected,
+        timestamp: new Date().toISOString()
     }));
     
     ws.on('close', () => {
@@ -533,28 +615,59 @@ wss.on('connection', (ws) => {
         console.error('[AMI Bridge] WebSocket error:', error);
         clients.delete(ws);
     });
+    
+    // Handle ping/pong for connection health
+    ws.on('pong', () => {
+        ws.isAlive = true;
+    });
 });
 
-// Start server
+// WebSocket heartbeat
+const interval = setInterval(() => {
+    wss.clients.forEach((ws) => {
+        if (ws.isAlive === false) {
+            clients.delete(ws);
+            return ws.terminate();
+        }
+        
+        ws.isAlive = false;
+        ws.ping();
+    });
+}, 30000);
+
+// Start servers
 const PORT = config.bridge.port || 3001;
 const WS_PORT = config.bridge.websocket_port || 8080;
 
 // Start HTTP server
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`[AMI Bridge] HTTP server running on port ${PORT}`);
+    console.log(`[AMI Bridge] CORS origins: ${config.security.allowed_origins.join(', ')}`);
 });
 
 // Start WebSocket server
-server.listen(WS_PORT, () => {
+server.listen(WS_PORT, '0.0.0.0', () => {
     console.log(`[AMI Bridge] WebSocket server running on port ${WS_PORT}`);
 });
 
 // Initial AMI connection
-connectToAMI(config.ami).catch(console.error);
+connectToAMI(config.ami).catch(error => {
+    console.error('[AMI Bridge] Initial connection failed:', error.message);
+});
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
     console.log('[AMI Bridge] Shutting down...');
+    clearInterval(interval);
+    if (amiConnection) {
+        amiConnection.end();
+    }
+    process.exit(0);
+});
+
+process.on('SIGINT', () => {
+    console.log('[AMI Bridge] Shutting down...');
+    clearInterval(interval);
     if (amiConnection) {
         amiConnection.end();
     }
@@ -569,6 +682,8 @@ EOF
     # Set permissions
     chown -R "$SERVICE_USER:$SERVICE_USER" "$AMI_BRIDGE_DIR"
     chmod 755 "$AMI_BRIDGE_DIR"
+    chmod 644 "$AMI_BRIDGE_DIR"/*.js
+    chmod 644 "$AMI_BRIDGE_DIR"/*.json
     
     log "AMI Bridge application created"
 }
@@ -632,7 +747,7 @@ EOF
     systemctl daemon-reload
     systemctl enable ami-bridge
     
-    log "Systemd service created"
+    log "Systemd service created and enabled for auto-start"
 }
 
 # Configure firewall
@@ -643,16 +758,18 @@ configure_firewall() {
     if systemctl is-active --quiet firewalld; then
         firewall-cmd --permanent --add-port=3001/tcp
         firewall-cmd --permanent --add-port=8080/tcp
+        firewall-cmd --permanent --add-port=5038/tcp
         firewall-cmd --reload
-        log "Firewalld rules added"
+        log "Firewalld rules added for ports 3001, 8080, 5038"
     # Check if iptables is available
     elif command -v iptables >/dev/null; then
         iptables -A INPUT -p tcp --dport 3001 -j ACCEPT
         iptables -A INPUT -p tcp --dport 8080 -j ACCEPT
+        iptables -A INPUT -p tcp --dport 5038 -j ACCEPT
         service iptables save 2>/dev/null || true
-        log "Iptables rules added"
+        log "Iptables rules added for ports 3001, 8080, 5038"
     else
-        warn "No firewall detected. Please manually open ports 3001 and 8080"
+        warn "No firewall detected. Please manually open ports 3001, 8080, and 5038"
     fi
 }
 
@@ -661,28 +778,44 @@ start_services() {
     log "Starting AMI Bridge service..."
     
     systemctl start ami-bridge
-    sleep 3
+    sleep 5
     
     if systemctl is-active --quiet ami-bridge; then
         log "AMI Bridge service started successfully"
+        
+        # Test the service
+        if curl -s "http://localhost:3001/health" >/dev/null 2>&1; then
+            log "AMI Bridge API health check passed"
+        else
+            warn "AMI Bridge API health check failed"
+        fi
     else
         error "Failed to start AMI Bridge service"
-        systemctl status ami-bridge
+        echo "Service status:"
+        systemctl status ami-bridge --no-pager -l
+        echo "Service logs:"
+        journalctl -u ami-bridge --no-pager -n 20
         exit 1
     fi
 }
 
 # Create management scripts
 create_management_scripts() {
+    log "Creating management scripts..."
+    
     cat > /usr/local/bin/ami-bridge-status << 'EOF'
 #!/bin/bash
 echo "FreePBX AMI Bridge Status"
 echo "========================"
 echo "Service Status: $(systemctl is-active ami-bridge)"
 echo "Service Enabled: $(systemctl is-enabled ami-bridge)"
+echo "Service Uptime: $(systemctl show ami-bridge --property=ActiveEnterTimestamp --value)"
 echo ""
 echo "Network Ports:"
-netstat -tlnp | grep -E ':(3001|8080)' || echo "No listening ports found"
+netstat -tlnp | grep -E ':(3001|8080|5038)' || echo "No listening ports found"
+echo ""
+echo "API Health Check:"
+curl -s http://localhost:3001/health | python -m json.tool 2>/dev/null || echo "API not responding"
 echo ""
 echo "Service Logs (last 10 lines):"
 journalctl -u ami-bridge --no-pager -n 10
@@ -694,13 +827,26 @@ EOF
 #!/bin/bash
 echo "Restarting AMI Bridge service..."
 systemctl restart ami-bridge
+sleep 3
+echo "Service status after restart:"
+systemctl status ami-bridge --no-pager -l
+echo ""
+echo "Testing API..."
 sleep 2
-systemctl status ami-bridge
+curl -s http://localhost:3001/health | python -m json.tool 2>/dev/null || echo "API test failed"
 EOF
 
     chmod +x /usr/local/bin/ami-bridge-restart
     
-    log "Management scripts created"
+    cat > /usr/local/bin/ami-bridge-logs << 'EOF'
+#!/bin/bash
+echo "Following AMI Bridge logs (Ctrl+C to exit)..."
+journalctl -u ami-bridge -f
+EOF
+
+    chmod +x /usr/local/bin/ami-bridge-logs
+    
+    log "Management scripts created: ami-bridge-status, ami-bridge-restart, ami-bridge-logs"
 }
 
 # Main installation function
@@ -724,25 +870,41 @@ main() {
     echo "=============================================="
     echo "FreePBX AMI Bridge Installation Complete!"
     echo "=============================================="
-    echo "Service Status: $(systemctl is-active ami-bridge)"
-    echo "Bridge API URL: http://localhost:3001"
-    echo "WebSocket URL: ws://localhost:8080"
+    echo "Server IP: $SERVER_IP"
+    echo "Bridge API URL: http://$SERVER_IP:3001"
+    echo "WebSocket URL: ws://$SERVER_IP:8080"
+    echo "Health Check: http://$SERVER_IP:3001/health"
     echo ""
     echo "Configuration:"
     echo "  AMI User: $AMI_USER"
     echo "  AMI Password: $AMI_PASSWORD"
     echo "  Service User: $SERVICE_USER"
     echo "  Install Directory: $AMI_BRIDGE_DIR"
+    echo "  Auto-start: Enabled"
+    echo ""
+    echo "CORS Origins Configured:"
+    echo "  - http://localhost"
+    echo "  - http://127.0.0.1" 
+    echo "  - http://$SERVER_IP (auto-detected)"
+    echo "  - http://192.168.0.132 (CRM server)"
+    echo "  - Plus HTTPS variants and wildcards"
     echo ""
     echo "Management Commands:"
     echo "  Status: ami-bridge-status"
     echo "  Restart: ami-bridge-restart"
-    echo "  Logs: journalctl -u ami-bridge -f"
+    echo "  Logs: ami-bridge-logs"
+    echo "  Service: systemctl status ami-bridge"
+    echo ""
+    echo "Firewall Ports Opened:"
+    echo "  - 3001/tcp (HTTP API)"
+    echo "  - 8080/tcp (WebSocket)"
+    echo "  - 5038/tcp (AMI)"
     echo ""
     echo "Next Steps:"
-    echo "1. Update your CRM to use bridge URLs"
-    echo "2. Test the connection from your web interface"
-    echo "3. Configure firewall if needed for remote access"
+    echo "1. Test API: curl http://$SERVER_IP:3001/health"
+    echo "2. Update your CRM integration settings"
+    echo "3. Configure your SIP extensions in FreePBX"
+    echo "4. Test call origination from CRM"
     echo "=============================================="
 }
 
