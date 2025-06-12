@@ -1,3 +1,4 @@
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -5,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Phone, TestTube, CheckCircle, AlertTriangle, RefreshCw, Info, Wifi, WifiOff, Server } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useAMIContext } from "@/contexts/AMIContext";
 
 interface AMIBridgeCardProps {
   connectionStatus: 'connected' | 'disconnected' | 'testing';
@@ -18,98 +19,35 @@ const AMIBridgeCard = ({
   onTestConnection,
   onConnectionStatusChange
 }: AMIBridgeCardProps) => {
-  const [isConnected, setIsConnected] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [lastEvent, setLastEvent] = useState<any>(null);
+  const { 
+    isConnected, 
+    isConnecting, 
+    connectionError, 
+    lastEvent, 
+    reconnectAttempts, 
+    maxReconnectAttempts,
+    connect, 
+    disconnect,
+    resetReconnectAttempts,
+    config 
+  } = useAMIContext();
   
   // Updated AMI Bridge settings with PBX IP
   const bridgeConfig = {
     serverUrl: 'http://192.168.0.5:3001',
     websocketUrl: 'ws://192.168.0.5:8080',
-    amiHost: '192.168.0.5',
-    amiPort: '5038',
-    amiUsername: 'crm-user',
-    amiPassword: '70159b4d49108ee8a6d1527edee2d8b50310358f'
+    amiHost: config.host,
+    amiPort: config.port,
+    amiUsername: config.username,
+    amiPassword: config.password
   };
-
-  // Update parent component when connection status changes
-  useEffect(() => {
-    if (onConnectionStatusChange) {
-      if (isConnecting) {
-        onConnectionStatusChange('testing');
-      } else if (isConnected) {
-        onConnectionStatusChange('connected');
-      } else {
-        onConnectionStatusChange('disconnected');
-      }
-    }
-  }, [isConnected, isConnecting, onConnectionStatusChange]);
 
   const handleTestConnection = async () => {
     if (isConnected) {
       await disconnect();
     } else {
+      resetReconnectAttempts();
       await connect();
-    }
-  };
-
-  const connect = async (): Promise<boolean> => {
-    setIsConnecting(true);
-    setConnectionError(null);
-    
-    try {
-      console.log('[AMI Bridge] Connecting to bridge server...');
-      
-      const response = await fetch(`${bridgeConfig.serverUrl}/api/ami/connect`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          host: bridgeConfig.amiHost,
-          port: bridgeConfig.amiPort,
-          username: bridgeConfig.amiUsername,
-          password: bridgeConfig.amiPassword
-        }),
-      });
-
-      const result = await response.json();
-      
-      if (result.success) {
-        setIsConnected(true);
-        setConnectionError(null);
-        console.log('[AMI Bridge] Connected successfully');
-        return true;
-      } else {
-        throw new Error(result.error || 'Connection failed');
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Connection failed';
-      setConnectionError(errorMessage);
-      console.error('[AMI Bridge] Connection error:', errorMessage);
-      setIsConnected(false);
-      return false;
-    } finally {
-      setIsConnecting(false);
-    }
-  };
-
-  const disconnect = async (): Promise<boolean> => {
-    try {
-      const response = await fetch(`${bridgeConfig.serverUrl}/api/ami/disconnect`, {
-        method: 'POST',
-      });
-
-      const result = await response.json();
-      setIsConnected(false);
-      setConnectionError(null);
-      setLastEvent(null);
-      return result.success;
-    } catch (error) {
-      console.error('[AMI Bridge] Disconnect error:', error);
-      setIsConnected(false);
-      return false;
     }
   };
 
@@ -132,12 +70,40 @@ const AMIBridgeCard = ({
       );
     }
     
+    if (reconnectAttempts > 0 && reconnectAttempts < maxReconnectAttempts) {
+      return (
+        <Badge className="flex items-center gap-1 bg-yellow-100 text-yellow-800">
+          <RefreshCw className="h-3 w-3 animate-spin" />
+          Reconnecting... ({reconnectAttempts}/{maxReconnectAttempts})
+        </Badge>
+      );
+    }
+    
     return (
       <Badge className="flex items-center gap-1 bg-red-100 text-red-800">
         <AlertTriangle className="h-3 w-3" />
         Disconnected
       </Badge>
     );
+  };
+
+  const getConnectionStatusMessage = () => {
+    if (connectionError) {
+      if (reconnectAttempts >= maxReconnectAttempts) {
+        return `Max retry attempts reached (${maxReconnectAttempts}). ${connectionError}`;
+      }
+      return connectionError;
+    }
+    
+    if (isConnected) {
+      return "Connected to AMI Bridge. Session will persist while logged in.";
+    }
+    
+    if (reconnectAttempts > 0) {
+      return `Attempting to reconnect... (${reconnectAttempts}/${maxReconnectAttempts})`;
+    }
+    
+    return "Disconnected from AMI Bridge.";
   };
 
   return (
@@ -153,16 +119,16 @@ const AMIBridgeCard = ({
         <Alert className="bg-blue-50 border-blue-200">
           <Info className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-800">
-            <strong>AMI Bridge Server:</strong> Connects to FreePBX at {bridgeConfig.amiHost} via the bridge service.
-            Bridge handles all AMI communication and WebSocket events.
+            <strong>Session Management:</strong> Bridge maintains connection during your session and auto-reconnects if disconnected.
+            Connection will close when you log out.
           </AlertDescription>
         </Alert>
 
-        {connectionError && (
-          <Alert variant="destructive">
+        {(connectionError || reconnectAttempts > 0) && (
+          <Alert variant={reconnectAttempts >= maxReconnectAttempts ? "destructive" : "default"}>
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              Connection Error: {connectionError}
+              {getConnectionStatusMessage()}
             </AlertDescription>
           </Alert>
         )}
@@ -203,15 +169,16 @@ const AMIBridgeCard = ({
         </div>
         
         <div className="bg-gray-50 p-3 rounded-md text-sm">
-          <p className="font-medium mb-2 text-green-600">✅ Bridge Configuration:</p>
+          <p className="font-medium mb-2 text-green-600">✅ Session Management:</p>
           <pre className="text-xs">
 {`Bridge Server: 192.168.0.5:3001
 WebSocket: 192.168.0.5:8080
 FreePBX: ${bridgeConfig.amiHost}:${bridgeConfig.amiPort}
-AMI User: ${bridgeConfig.amiUsername}`}
+Auto-reconnect: ${maxReconnectAttempts} attempts
+Session-based: Disconnect on logout`}
           </pre>
           <p className="text-xs mt-2 text-green-600">
-            All connections routed through AMI Bridge ✓
+            Persistent connection during user session ✓
           </p>
         </div>
         
@@ -228,15 +195,30 @@ AMI User: ${bridgeConfig.amiUsername}`}
           <span className="text-sm">Bridge Status</span>
           {getStatusBadge()}
         </div>
-        <Button 
-          variant={isConnected ? "destructive" : "outline"}
-          onClick={handleTestConnection}
-          disabled={isConnecting}
-          className="w-full"
-        >
-          <TestTube className="h-4 w-4 mr-2" />
-          {isConnected ? 'Disconnect Bridge' : 'Connect to Bridge'}
-        </Button>
+        
+        <div className="grid grid-cols-2 gap-2">
+          <Button 
+            variant={isConnected ? "destructive" : "outline"}
+            onClick={handleTestConnection}
+            disabled={isConnecting}
+            className="w-full"
+          >
+            <TestTube className="h-4 w-4 mr-2" />
+            {isConnected ? 'Disconnect' : 'Connect'}
+          </Button>
+          
+          {reconnectAttempts > 0 && (
+            <Button 
+              variant="secondary"
+              onClick={resetReconnectAttempts}
+              disabled={isConnecting}
+              className="w-full"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Reset Retry
+            </Button>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
