@@ -113,8 +113,6 @@ const LoginForm = () => {
           <div className="mt-6 p-3 bg-muted rounded-lg">
             <p className="text-sm text-muted-foreground mb-2">Demo Credentials:</p>
             <div className="text-xs space-y-1">
-              <p><strong>Admin:</strong> admin@abdurahman.co.za / M@rwan1395</p>
-              <p><strong>Manager:</strong> manager@abdurahman.co.za / manager123</p>
               <p><strong>Agent:</strong> agent@abdurahman.co.za / agent123</p>
             </div>
           </div>

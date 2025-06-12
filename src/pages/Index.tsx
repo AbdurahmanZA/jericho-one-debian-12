@@ -60,7 +60,7 @@ const Index = () => {
 
         {isManager && (
           <TabsContent value="reports" className="space-y-4">
-            <ReportsAnalytics />
+            <ReportsAnalytics userRole={user.role} />
           </TabsContent>
         )}
 
