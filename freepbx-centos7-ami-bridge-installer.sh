@@ -280,7 +280,7 @@ create_ami_bridge_app() {
 }
 EOF
 
-    # Create configuration file
+    # Create configuration file with proper CORS origins
     cat > config.json << EOF
 {
   "ami": {
@@ -294,7 +294,15 @@ EOF
     "websocket_port": 8080
   },
   "security": {
-    "allowed_origins": ["http://localhost", "http://127.0.0.1"],
+    "allowed_origins": [
+      "http://localhost", 
+      "http://127.0.0.1",
+      "http://192.168.0.132",
+      "http://192.168.0.132:80",
+      "http://192.168.0.132:3000",
+      "http://192.168.0.132/crm",
+      "*"
+    ],
     "rate_limit": {
       "window_ms": 60000,
       "max_requests": 100
