@@ -1,11 +1,9 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { Phone, PhoneCall, Users, User } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAMIContext } from "@/contexts/AMIContext";
@@ -17,7 +15,7 @@ interface CallDialerProps {
     leadName: string;
     phone: string;
     duration: string;
-    status: 'connected' | 'ringing' | 'on-hold';
+    status: 'connected' | 'ringing' | 'on-hold' | 'ended';
     startTime: Date;
     leadId?: string;
   }) => void;
@@ -31,13 +29,21 @@ interface CallDialerProps {
 
 const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProps) => {
   const { toast } = useToast();
-  const { isConnected, originateCall } = useAMIContext();
+  const { isConnected, originateCall, lastEvent, callEvents } = useAMIContext();
   const { user } = useAuth();
   const [phoneNumber, setPhoneNumber] = useState('');
   const [contactName, setContactName] = useState('');
   const [callNotes, setCallNotes] = useState('');
   const [callType, setCallType] = useState('manual');
   const [selectedLead, setSelectedLead] = useState('');
+  const [activeCall, setActiveCall] = useState<{
+    id: string;
+    uniqueId?: string;
+    leadName: string;
+    phone: string;
+    startTime: Date;
+    status: 'ringing' | 'connected' | 'on-hold' | 'ended';
+  } | null>(null);
 
   // Sample leads for testing
   const testLeads = [
@@ -45,6 +51,106 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
     { id: '2', name: 'Sarah Johnson', phone: '+1-555-0456', company: 'Tech Solutions' },
     { id: '3', name: 'Mike Davis', phone: '+1-555-0789', company: 'Global Systems' }
   ];
+
+  // Monitor AMI events for call status updates
+  useEffect(() => {
+    if (!lastEvent || !activeCall) return;
+
+    const userExtension = user?.extension;
+    if (!userExtension) return;
+
+    console.log('📞 [CallDialer] Processing AMI event:', lastEvent);
+    console.log('📞 [CallDialer] Active call:', activeCall);
+    console.log('📞 [CallDialer] User extension:', userExtension);
+
+    // Check if this event is related to our user's extension
+    const isUserChannel = lastEvent.channel?.includes(`PJSIP/${userExtension}`) ||
+                         lastEvent.destchannel?.includes(`PJSIP/${userExtension}`) ||
+                         lastEvent.calleridnum === userExtension;
+
+    if (!isUserChannel) return;
+
+    let newStatus = activeCall.status;
+    let shouldUpdate = false;
+
+    switch (lastEvent.event) {
+      case 'Newchannel':
+        if (lastEvent.channelstate === '4' || lastEvent.channelstate === '5') {
+          newStatus = 'ringing';
+          shouldUpdate = true;
+        }
+        break;
+
+      case 'DialBegin':
+        newStatus = 'ringing';
+        shouldUpdate = true;
+        break;
+
+      case 'DialEnd':
+        if (lastEvent.dialstatus === 'ANSWER') {
+          newStatus = 'connected';
+          shouldUpdate = true;
+        } else if (lastEvent.dialstatus === 'BUSY' || lastEvent.dialstatus === 'NOANSWER') {
+          newStatus = 'ended';
+          shouldUpdate = true;
+        }
+        break;
+
+      case 'Bridge':
+        newStatus = 'connected';
+        shouldUpdate = true;
+        break;
+
+      case 'Hangup':
+        newStatus = 'ended';
+        shouldUpdate = true;
+        // Clear active call after a delay
+        setTimeout(() => {
+          setActiveCall(null);
+        }, 2000);
+        break;
+
+      case 'Hold':
+        newStatus = 'on-hold';
+        shouldUpdate = true;
+        break;
+
+      case 'Unhold':
+        newStatus = 'connected';
+        shouldUpdate = true;
+        break;
+    }
+
+    if (shouldUpdate && newStatus !== activeCall.status) {
+      console.log(`📞 [CallDialer] Status change: ${activeCall.status} -> ${newStatus}`);
+      
+      const updatedCall = {
+        ...activeCall,
+        status: newStatus
+      };
+      
+      setActiveCall(updatedCall);
+      
+      // Calculate duration
+      const duration = Math.floor((new Date().getTime() - activeCall.startTime.getTime()) / 1000);
+      const durationStr = `${Math.floor(duration / 60).toString().padStart(2, '0')}:${(duration % 60).toString().padStart(2, '0')}`;
+      
+      // Update parent component
+      onCallInitiated({
+        id: activeCall.id,
+        leadName: activeCall.leadName,
+        phone: activeCall.phone,
+        duration: durationStr,
+        status: newStatus,
+        startTime: activeCall.startTime
+      });
+
+      toast({
+        title: "Call Status Update",
+        description: `Call ${newStatus}: ${activeCall.leadName}`,
+      });
+    }
+  }, [lastEvent, activeCall, user?.extension, onCallInitiated, toast]);
 
   const createLeadFromCall = (name: string, phone: string, notes: string) => {
     const newLead = {
@@ -124,20 +230,22 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
           id: `call_${Date.now()}`,
           leadName: targetName,
           phone: targetPhone,
-          duration: '00:00',
-          status: 'ringing' as const,
           startTime: new Date(),
-          leadId
+          status: 'ringing' as const
         };
 
-        onCallInitiated(newCall);
+        setActiveCall(newCall);
         
-        // Set up call status monitoring
-        setTimeout(() => {
-          // Update to connected after 3 seconds (simulating answer)
-          const updatedCall = { ...newCall, status: 'connected' as const };
-          onCallInitiated(updatedCall);
-        }, 3000);
+        // Initial call record with ringing status
+        onCallInitiated({
+          id: newCall.id,
+          leadName: targetName,
+          phone: targetPhone,
+          duration: '00:00',
+          status: 'ringing',
+          startTime: newCall.startTime,
+          leadId
+        });
         
         toast({
           title: "Call Initiated",
@@ -198,6 +306,28 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
           )}
         </div>
 
+        {/* Active call status */}
+        {activeCall && (
+          <div className="bg-blue-50 border border-blue-200 rounded p-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-blue-900">
+                {activeCall.leadName}
+              </span>
+              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                activeCall.status === 'connected' ? 'bg-green-100 text-green-800' :
+                activeCall.status === 'ringing' ? 'bg-yellow-100 text-yellow-800' :
+                activeCall.status === 'on-hold' ? 'bg-orange-100 text-orange-800' :
+                'bg-gray-100 text-gray-800'
+              }`}>
+                {activeCall.status}
+              </span>
+            </div>
+            <div className="text-blue-700 mt-1">
+              {activeCall.phone}
+            </div>
+          </div>
+        )}
+
         {/* Compact call type selector */}
         <div className="grid grid-cols-2 gap-2">
           <Button
@@ -205,6 +335,7 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
             size="sm"
             onClick={() => setCallType('manual')}
             className="text-xs"
+            disabled={!!activeCall}
           >
             Manual
           </Button>
@@ -213,12 +344,13 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
             size="sm"
             onClick={() => setCallType('lead')}
             className="text-xs"
+            disabled={!!activeCall}
           >
             Lead
           </Button>
         </div>
 
-        {callType === 'manual' && (
+        {callType === 'manual' && !activeCall && (
           <div className="space-y-2">
             <div>
               <Input
@@ -239,7 +371,7 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
           </div>
         )}
 
-        {callType === 'lead' && (
+        {callType === 'lead' && !activeCall && (
           <div>
             <Select value={selectedLead} onValueChange={setSelectedLead}>
               <SelectTrigger className="text-sm">
@@ -259,15 +391,17 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
           </div>
         )}
 
-        <Button 
-          onClick={initiateCall} 
-          disabled={disabled || !user?.extension || (callType === 'manual' && !phoneNumber) || (callType === 'lead' && !selectedLead) || !isConnected}
-          className="w-full"
-          size="sm"
-        >
-          <PhoneCall className="h-3 w-3 mr-2" />
-          {!isConnected ? 'AMI Not Connected' : !user?.extension ? 'No Extension' : 'Call'}
-        </Button>
+        {!activeCall && (
+          <Button 
+            onClick={initiateCall} 
+            disabled={disabled || !user?.extension || (callType === 'manual' && !phoneNumber) || (callType === 'lead' && !selectedLead) || !isConnected}
+            className="w-full"
+            size="sm"
+          >
+            <PhoneCall className="h-3 w-3 mr-2" />
+            {!isConnected ? 'AMI Not Connected' : !user?.extension ? 'No Extension' : 'Call'}
+          </Button>
+        )}
         
         {!isConnected && (
           <p className="text-xs text-muted-foreground text-center">
