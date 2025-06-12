@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useAsteriskAMI } from '@/hooks/useAsteriskAMI';
 
@@ -49,7 +48,7 @@ export const AMIProvider = ({ children }: AMIProviderProps) => {
     host: '192.168.0.5',
     port: '5038',
     username: 'crm-user',
-    password: '70159b4d49108ee8a6d1527edee2d8b50310358f'
+    password: 'CRM_AMI_Pass'
   });
 
   const [pendingCall, setPendingCall] = useState<PendingCall | null>(null);

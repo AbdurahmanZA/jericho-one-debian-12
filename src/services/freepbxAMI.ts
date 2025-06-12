@@ -52,7 +52,7 @@ export class FreePBXAMIClient {
       try {
         console.log(`🔗 [AMI] Initiating connection to ${this.host}:${this.port}`);
         console.log(`👤 [AMI] Username: ${this.username}`);
-        console.log(`🔑 [AMI] Password: ${this.password.substring(0, 8)}...`);
+        console.log(`🔑 [AMI] Password: ${this.password}`);
         
         // Since browsers can't make raw TCP connections, we'll simulate
         // the actual AMI protocol conversation for debugging
@@ -128,7 +128,7 @@ export class FreePBXAMIClient {
         console.log(`❌ [AMI] - Username: '${this.username}'`);
         console.log(`❌ [AMI] - Password: '${this.password}'`);
         console.log(`❌ [AMI] - Expected username: 'crm-user'`);
-        console.log(`❌ [AMI] - Expected password: '70159b4d49108ee8a6d1527edee2d8b50310358f'`);
+        console.log(`❌ [AMI] - Expected password: 'CRM_AMI_Pass'`);
         
         this.isConnected = false;
         this.notifyConnectionListeners(false);
@@ -143,9 +143,9 @@ export class FreePBXAMIClient {
   }
 
   private validateCredentials(): boolean {
-    // Simulate actual credential validation
+    // Simulate actual credential validation with correct FreePBX credentials
     const expectedUsername = 'crm-user';
-    const expectedPassword = '70159b4d49108ee8a6d1527edee2d8b50310358f';
+    const expectedPassword = 'CRM_AMI_Pass';
     
     console.log(`🔍 [AMI] Validating credentials...`);
     console.log(`🔍 [AMI] Provided username: '${this.username}' (length: ${this.username.length})`);
