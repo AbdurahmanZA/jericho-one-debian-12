@@ -1,91 +1,70 @@
 
 import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAuth } from "@/contexts/AuthContext";
-import { AMIProvider } from "@/contexts/AMIContext";
-import CallCenter from "@/components/CallCenter";
 import LeadManagement from "@/components/LeadManagement";
-import ContactManager from "@/components/ContactManager";
-import CallLogs from "@/components/CallLogs";
-import UserManagement from "@/components/UserManagement";
+import CallCenter from "@/components/CallCenter";
+import CallbackCalendar from "@/components/callback-calendar/CallbackCalendar";
 import ReportsAnalytics from "@/components/ReportsAnalytics";
 import IntegrationSettings from "@/components/IntegrationSettings";
-import SystemStatus from "@/components/SystemStatus";
-import DatabaseViewer from "@/components/DatabaseViewer";
+import UserManagement from "@/components/UserManagement";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Index = () => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState("call-center");
+  const [activeTab, setActiveTab] = useState("leads");
 
-  if (!user) {
-    return null; // This shouldn't happen as auth is handled in App.tsx
-  }
-
-  const isAdmin = user.role === 'Administrator';
-  const isManager = user.role === 'Manager' || isAdmin;
+  if (!user) return null;
 
   return (
-    <AMIProvider>
-      <div className="container mx-auto p-6 max-w-7xl">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-9 lg:grid-cols-9">
-            <TabsTrigger value="call-center">Call Center</TabsTrigger>
-            <TabsTrigger value="leads">Leads</TabsTrigger>
-            <TabsTrigger value="contacts">Contacts</TabsTrigger>
-            <TabsTrigger value="call-logs">Call Logs</TabsTrigger>
-            <TabsTrigger value="database">Database</TabsTrigger>
-            {isManager && <TabsTrigger value="users">Users</TabsTrigger>}
-            {isManager && <TabsTrigger value="reports">Reports</TabsTrigger>}
-            {isAdmin && <TabsTrigger value="integration">Integration</TabsTrigger>}
-            {isAdmin && <TabsTrigger value="system">System</TabsTrigger>}
-          </TabsList>
-
-          <TabsContent value="call-center" className="space-y-4">
-            <CallCenter userRole={user.role} />
-          </TabsContent>
-
-          <TabsContent value="leads" className="space-y-4">
-            <LeadManagement userRole={user.role} />
-          </TabsContent>
-
-          <TabsContent value="contacts" className="space-y-4">
-            <ContactManager />
-          </TabsContent>
-
-          <TabsContent value="call-logs" className="space-y-4">
-            <CallLogs />
-          </TabsContent>
-
-          <TabsContent value="database" className="space-y-4">
-            <DatabaseViewer />
-          </TabsContent>
-
-          {isManager && (
-            <TabsContent value="users" className="space-y-4">
-              <UserManagement />
-            </TabsContent>
-          )}
-
-          {isManager && (
-            <TabsContent value="reports" className="space-y-4">
-              <ReportsAnalytics userRole={user.role} />
-            </TabsContent>
-          )}
-
-          {isAdmin && (
-            <TabsContent value="integration" className="space-y-4">
-              <IntegrationSettings />
-            </TabsContent>
-          )}
-
-          {isAdmin && (
-            <TabsContent value="system" className="space-y-4">
-              <SystemStatus />
-            </TabsContent>
-          )}
-        </Tabs>
+    <div className="container mx-auto p-6">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight">
+          Welcome back, {user.name}
+        </h1>
+        <p className="text-muted-foreground">
+          Manage your leads, calls, and team performance from your dashboard.
+        </p>
       </div>
-    </AMIProvider>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <TabsList className="grid w-full grid-cols-6">
+          <TabsTrigger value="leads">Lead Management</TabsTrigger>
+          <TabsTrigger value="calls">Call Center</TabsTrigger>
+          <TabsTrigger value="calendar">Callback Calendar</TabsTrigger>
+          <TabsTrigger value="reports">Reports</TabsTrigger>
+          <TabsTrigger value="integrations">Integrations</TabsTrigger>
+          {(user.role === "manager" || user.role === "administrator") && (
+            <TabsTrigger value="users">User Management</TabsTrigger>
+          )}
+        </TabsList>
+
+        <TabsContent value="leads">
+          <LeadManagement userRole={user.role} />
+        </TabsContent>
+
+        <TabsContent value="calls">
+          <CallCenter userRole={user.role} />
+        </TabsContent>
+
+        <TabsContent value="calendar">
+          <CallbackCalendar userRole={user.role} />
+        </TabsContent>
+
+        <TabsContent value="reports">
+          <ReportsAnalytics userRole={user.role} />
+        </TabsContent>
+
+        <TabsContent value="integrations">
+          <IntegrationSettings />
+        </TabsContent>
+
+        {(user.role === "manager" || user.role === "administrator") && (
+          <TabsContent value="users">
+            <UserManagement />
+          </TabsContent>
+        )}
+      </Tabs>
+    </div>
   );
 };
 
