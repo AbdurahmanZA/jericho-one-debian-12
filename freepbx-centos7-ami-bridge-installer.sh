@@ -33,8 +33,8 @@ info() {
 # Configuration variables
 SERVICE_USER="ami-bridge"
 AMI_BRIDGE_DIR="/opt/ami-bridge"
-AMI_USER="crm-user"
-AMI_PASSWORD="CRM_AMI_Secret2024!"
+AMI_USER="admin"
+AMI_PASSWORD="amp111"
 
 # Check if running as root
 check_root() {
