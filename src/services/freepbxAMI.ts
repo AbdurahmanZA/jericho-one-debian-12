@@ -159,6 +159,67 @@ export class FreePBXAMIClient {
     return this.username === expectedUsername && this.password === expectedPassword;
   }
 
+  async getSIPPeers(): Promise<void> {
+    if (!this.isConnected) return;
+
+    try {
+      const actionId = `sippeers_${Date.now()}`;
+      console.log(`👥 [AMI] >> Action: PJSIPShowEndpoints`);
+      console.log(`👥 [AMI] >> ActionID: ${actionId}`);
+      console.log(`👥 [AMI] >> [CRLF][CRLF]`);
+      
+      setTimeout(() => {
+        // Simulate PJSIP endpoints instead of SIP peers
+        console.log(`👥 [AMI] << Event: EndpointDetail`);
+        console.log(`👥 [AMI] << ObjectType: endpoint`);
+        console.log(`👥 [AMI] << ObjectName: 1000`);
+        console.log(`👥 [AMI] << Transport: transport-udp`);
+        console.log(`👥 [AMI] << Aor: 1000`);
+        console.log(`👥 [AMI] << Auths: 1000`);
+        console.log(`👥 [AMI] << DeviceState: NOT_INUSE`);
+        console.log(`👥 [AMI] << ActionID: ${actionId}`);
+        console.log(`👥 [AMI] << [CRLF][CRLF]`);
+        
+        this.handleEvent({
+          event: 'EndpointDetail',
+          objecttype: 'endpoint',
+          objectname: '1000',
+          transport: 'transport-udp',
+          aor: '1000',
+          auths: '1000',
+          devicestate: 'NOT_INUSE'
+        });
+
+        // Also show extension 101
+        setTimeout(() => {
+          console.log(`👥 [AMI] << Event: EndpointDetail`);
+          console.log(`👥 [AMI] << ObjectType: endpoint`);
+          console.log(`👥 [AMI] << ObjectName: 101`);
+          console.log(`👥 [AMI] << Transport: transport-udp`);
+          console.log(`👥 [AMI] << Aor: 101`);
+          console.log(`👥 [AMI] << Auths: 101`);
+          console.log(`👥 [AMI] << DeviceState: NOT_INUSE`);
+          console.log(`👥 [AMI] << ActionID: ${actionId}`);
+          console.log(`👥 [AMI] << [CRLF][CRLF]`);
+          
+          this.handleEvent({
+            event: 'EndpointDetail',
+            objecttype: 'endpoint',
+            objectname: '101',
+            transport: 'transport-udp',
+            aor: '101',
+            auths: '101',
+            devicestate: 'NOT_INUSE'
+          });
+        }, 200);
+        
+      }, 400);
+      
+    } catch (error) {
+      console.error('❌ [AMI] Error getting PJSIP endpoints:', error);
+    }
+  }
+
   private startKeepAlive(): void {
     console.log(`💓 [AMI] Starting keep-alive mechanism (30s interval)`);
     
@@ -176,11 +237,14 @@ export class FreePBXAMIClient {
           console.log(`💓 [AMI] << [CRLF][CRLF]`);
         }, 100);
         
+        // Send PJSIP peer status events instead of SIP
         this.handleEvent({
-          event: 'PeerStatus',
+          event: 'ContactStatus',
           privilege: 'system,all',
-          peer: 'SIP/101',
-          peerstatus: 'Registered'
+          uri: 'sip:1000@192.168.0.100:5060',
+          contactstatus: 'Created',
+          aor: '1000',
+          endpointname: '1000'
         });
       }
     }, 30000);
@@ -323,44 +387,6 @@ export class FreePBXAMIClient {
       
     } catch (error) {
       console.error('❌ [AMI] Error getting active channels:', error);
-    }
-  }
-
-  async getSIPPeers(): Promise<void> {
-    if (!this.isConnected) return;
-
-    try {
-      const actionId = `sippeers_${Date.now()}`;
-      console.log(`👥 [AMI] >> Action: SIPpeers`);
-      console.log(`👥 [AMI] >> ActionID: ${actionId}`);
-      console.log(`👥 [AMI] >> [CRLF][CRLF]`);
-      
-      setTimeout(() => {
-        console.log(`👥 [AMI] << Event: PeerEntry`);
-        console.log(`👥 [AMI] << ChannelType: SIP`);
-        console.log(`👥 [AMI] << ObjectName: 101`);
-        console.log(`👥 [AMI] << ChanObjectType: peer`);
-        console.log(`👥 [AMI] << IPaddress: 192.168.0.100`);
-        console.log(`👥 [AMI] << IPport: 5060`);
-        console.log(`👥 [AMI] << Dynamic: yes`);
-        console.log(`👥 [AMI] << Status: OK (15 ms)`);
-        console.log(`👥 [AMI] << ActionID: ${actionId}`);
-        console.log(`👥 [AMI] << [CRLF][CRLF]`);
-        
-        this.handleEvent({
-          event: 'PeerEntry',
-          channeltype: 'SIP',
-          objectname: '101',
-          chanobjecttype: 'peer',
-          ipaddress: '192.168.0.100',
-          ipport: '5060',
-          dynamic: 'yes',
-          status: 'OK (15 ms)'
-        });
-      }, 400);
-      
-    } catch (error) {
-      console.error('❌ [AMI] Error getting SIP peers:', error);
     }
   }
 }
