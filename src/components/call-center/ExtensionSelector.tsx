@@ -50,10 +50,13 @@ const ExtensionSelector = ({ value, onChange, disabled, isConnected }: Extension
       setLastFetchTime(new Date().toLocaleTimeString());
       
       if (endpoints.length === 0) {
-        console.log('[ExtensionSelector] No endpoints found');
+        console.log('[ExtensionSelector] No endpoints found - this could indicate:');
+        console.log('- No PJSIP endpoints configured in FreePBX');
+        console.log('- AMI user lacks permissions for PJSIP commands');
+        console.log('- Bridge communication issues');
         toast({
           title: "No Extensions Found",
-          description: "No PJSIP endpoints found. Check FreePBX configuration or try refreshing.",
+          description: "No PJSIP endpoints found. Check FreePBX configuration or AMI permissions.",
           variant: "destructive"
         });
       } else {
@@ -65,9 +68,11 @@ const ExtensionSelector = ({ value, onChange, disabled, isConnected }: Extension
       }
     } catch (error) {
       console.error('[ExtensionSelector] Failed to fetch extensions:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.log(`[ExtensionSelector] Error details: ${errorMessage}`);
       toast({
-        title: "Error",
-        description: "Failed to fetch PJSIP extensions from AMI bridge",
+        title: "Error Fetching Extensions",
+        description: `Failed to fetch PJSIP extensions: ${errorMessage}`,
         variant: "destructive"
       });
       setExtensions([]);
@@ -106,17 +111,20 @@ const ExtensionSelector = ({ value, onChange, disabled, isConnected }: Extension
       <div className="flex items-center justify-between">
         <Label htmlFor="extension">PJSIP Extension</Label>
         <div className="flex items-center gap-2">
-          {isConnected ? (
-            <Wifi className="h-3 w-3 text-green-600" title="AMI Connected" />
-          ) : (
-            <WifiOff className="h-3 w-3 text-red-600" title="AMI Disconnected" />
-          )}
+          <div className="flex items-center" title={isConnected ? "AMI Connected" : "AMI Disconnected"}>
+            {isConnected ? (
+              <Wifi className="h-3 w-3 text-green-600" />
+            ) : (
+              <WifiOff className="h-3 w-3 text-red-600" />
+            )}
+          </div>
           <Button
             variant="outline"
             size="sm"
             onClick={fetchExtensions}
             disabled={loading || !isConnected}
             className="h-7 px-2"
+            title="Refresh PJSIP extensions"
           >
             <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
           </Button>
