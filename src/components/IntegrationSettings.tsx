@@ -19,6 +19,7 @@ interface LogEntry {
   timestamp: string;
   type: 'info' | 'success' | 'warning' | 'error';
   message: string;
+  details?: string;
 }
 
 interface IntegrationConfig {
@@ -169,12 +170,13 @@ const IntegrationSettings = () => {
         });
         return true;
       } else {
-        throw new Error(`HTTP ${response.status}: Database connection failed`);
+        const errorData = await response.text();
+        throw new Error(`HTTP ${response.status}: Database connection failed`, errorData);
       }
     } catch (error) {
       setConnectionStatus(prev => ({ ...prev, database: 'disconnected' }));
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      addLogEntry('error', `Database connection failed: ${errorMessage}`);
+      addLogEntry('error', 'Database connection failed', errorMessage);
       toast({
         title: "Database Connection Failed",
         description: "Could not connect to database. Check your settings.",
@@ -215,28 +217,33 @@ const IntegrationSettings = () => {
     });
   };
 
-  const addLogEntry = (type: LogEntry['type'], message: string) => {
+  const addLogEntry = (type: LogEntry['type'], message: string, details?: string) => {
     const newLog: LogEntry = {
       timestamp: new Date().toISOString(),
       type,
-      message
+      message,
+      details
     };
-    setIntegrationLogs(prev => [newLog, ...prev.slice(0, 49)]); // Keep last 50 logs
+    setIntegrationLogs(prev => [newLog, ...prev.slice(0, 99)]); // Keep last 100 logs
   };
 
   const clearLogs = () => {
-    setIntegrationLogs([]);
+    setIntegrationLogs([{
+      timestamp: new Date().toISOString(),
+      type: 'info',
+      message: 'Integration logs cleared'
+    }]);
   };
 
   const handleAMIBridgeConnectionStatusChange = (status: 'connected' | 'disconnected' | 'testing') => {
     setConnectionStatus(prev => ({ ...prev, amiBridge: status }));
     
     if (status === 'connected') {
-      addLogEntry('success', 'AMI Bridge connection established to 192.168.0.5');
+      addLogEntry('success', 'AMI Bridge connection established', 'Successfully connected to FreePBX AMI interface via bridge server');
     } else if (status === 'disconnected') {
-      addLogEntry('warning', 'AMI Bridge connection ended');
+      addLogEntry('warning', 'AMI Bridge connection ended', 'Connection to AMI bridge server was terminated');
     } else {
-      addLogEntry('info', 'Testing AMI Bridge connection...');
+      addLogEntry('info', 'Testing AMI Bridge connection...', 'Attempting to establish connection to bridge server');
     }
   };
 
