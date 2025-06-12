@@ -279,6 +279,24 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
 
   return (
     <div className="space-y-6">
+      {/* SIMULATION WARNING */}
+      <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>
+          <h3 className="font-bold text-red-900">⚠️ BROWSER SIMULATION MODE ⚠️</h3>
+        </div>
+        <div className="text-sm text-red-800 space-y-1">
+          <p><strong>This Call Center is running in simulation mode because:</strong></p>
+          <ul className="list-disc list-inside ml-4 space-y-1">
+            <li>Browsers cannot make raw TCP connections to FreePBX AMI</li>
+            <li>Real AMI calls require server-side implementation</li>
+            <li>The exact call format being sent is logged in browser console</li>
+          </ul>
+          <p className="mt-2"><strong>To see real AMI commands:</strong> Open browser developer tools → Console tab</p>
+          <p><strong>Real FreePBX Integration:</strong> Requires WebSocket proxy or server-side AMI bridge</p>
+        </div>
+      </div>
+
       {/* AMI Status Display */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div className="flex items-center justify-between">
@@ -287,16 +305,16 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
               PJSIP Extension: PJSIP/{userExtension} | User: {user?.name}
             </h3>
             <p className="text-sm text-blue-700">
-              AMI Status: {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
+              AMI Status: {isConnected ? '🟢 Simulated Connected' : '🔴 Disconnected'}
             </p>
           </div>
           <div className="text-sm text-blue-600">
-            Ready for REAL PJSIP calls from PJSIP/{userExtension}
+            Simulated PJSIP calls from PJSIP/{userExtension}
           </div>
         </div>
         {callEvents.length > 0 && (
           <div className="mt-2 text-xs text-blue-600">
-            Latest AMI Event: {callEvents[0].event} - {callEvents[0].channel || callEvents[0].status || 'System'}
+            Latest Simulated Event: {callEvents[0].event} - {callEvents[0].channel || callEvents[0].status || 'System'}
           </div>
         )}
       </div>
