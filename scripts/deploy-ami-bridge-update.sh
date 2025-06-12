@@ -23,15 +23,40 @@ warning() {
     echo -e "${YELLOW}[WARNING] $1${NC}"
 }
 
-# Configuration
-SERVER_DIR="/var/www/html/freepbx-crm/server"
-BACKUP_DIR="/var/www/html/freepbx-crm/backup/$(date +%Y%m%d_%H%M%S)"
-
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
     error "This script must be run as root. Use: sudo $0"
     exit 1
 fi
+
+# Determine the correct server directory
+SERVER_DIR=""
+POSSIBLE_DIRS=(
+    "/var/www/html/freepbx-crm/server"
+    "/home/asterisk/freepbx-crm/server"
+    "/opt/freepbx-crm/server"
+    "/root/freepbx-crm/server"
+    "/usr/local/freepbx-crm/server"
+)
+
+log "Searching for existing FreePBX CRM server directory..."
+for dir in "${POSSIBLE_DIRS[@]}"; do
+    if [ -d "$dir" ]; then
+        SERVER_DIR="$dir"
+        log "Found server directory: $SERVER_DIR"
+        break
+    fi
+done
+
+# If no existing directory found, create the default one
+if [ -z "$SERVER_DIR" ]; then
+    log "No existing server directory found. Creating default structure..."
+    SERVER_DIR="/var/www/html/freepbx-crm/server"
+    mkdir -p "$SERVER_DIR"
+    log "Created server directory: $SERVER_DIR"
+fi
+
+BACKUP_DIR="$SERVER_DIR/backup/$(date +%Y%m%d_%H%M%S)"
 
 # Create backup
 log "Creating backup of current AMI Bridge..."
@@ -49,7 +74,38 @@ pkill -f "node.*ami-bridge.js" || echo "No existing process found"
 sleep 3
 
 # Navigate to server directory
-cd "$SERVER_DIR" || { error "Server directory not found: $SERVER_DIR"; exit 1; }
+cd "$SERVER_DIR" || { error "Failed to navigate to server directory: $SERVER_DIR"; exit 1; }
+
+# Check if Node.js is installed
+if ! command -v node &> /dev/null; then
+    error "Node.js is not installed. Please install Node.js first."
+    exit 1
+fi
+
+# Check if npm is available for package installation
+if [ ! -f "package.json" ]; then
+    log "Creating package.json for dependencies..."
+    cat > package.json << 'EOF'
+{
+  "name": "freepbx-ami-bridge",
+  "version": "1.0.0",
+  "description": "FreePBX AMI Bridge Server",
+  "main": "ami-bridge.js",
+  "scripts": {
+    "start": "node ami-bridge.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.13.0",
+    "cors": "^2.8.5"
+  }
+}
+EOF
+fi
+
+# Install dependencies
+log "Installing Node.js dependencies..."
+npm install || { error "Failed to install dependencies"; exit 1; }
 
 # Update the AMI Bridge file with the new code
 log "Updating AMI Bridge server code..."
@@ -502,7 +558,7 @@ module.exports = { AMIBridge };
 EOF
 
 # Set proper permissions
-chown asterisk:asterisk ami-bridge.js
+chown asterisk:asterisk ami-bridge.js 2>/dev/null || chown apache:apache ami-bridge.js 2>/dev/null || true
 chmod 644 ami-bridge.js
 
 # Start the AMI Bridge server
@@ -517,15 +573,16 @@ NEW_PID=$(pgrep -f "node.*ami-bridge.js")
 if [ ! -z "$NEW_PID" ]; then
     log "✅ AMI Bridge updated and restarted successfully!"
     log "Process ID: $NEW_PID"
+    log "Server directory: $SERVER_DIR"
     log "Log file: $SERVER_DIR/ami-bridge.log"
     log ""
     log "Server URLs:"
-    log "  HTTP API: http://192.168.0.5:3001"
-    log "  WebSocket: ws://192.168.0.5:8080"
+    log "  HTTP API: http://$(hostname -I | awk '{print $1}'):3001"
+    log "  WebSocket: ws://$(hostname -I | awk '{print $1}'):8080"
     log ""
-    log "Testing PJSIP endpoint API:"
+    log "Testing connection:"
     sleep 2
-    curl -s "http://192.168.0.5:3001/api/ami/pjsip-endpoints" | python -m json.tool 2>/dev/null || echo "API call completed"
+    curl -s "http://localhost:3001/api/ami/status" | python -m json.tool 2>/dev/null || echo "API call completed"
 else
     error "❌ Failed to start updated AMI Bridge!"
     error "Check the log for errors: cat $SERVER_DIR/ami-bridge.log"
@@ -540,4 +597,5 @@ fi
 
 log ""
 log "Update deployment completed successfully!"
+log "Directory used: $SERVER_DIR"
 log "You can now test extension fetching in your CRM interface."
