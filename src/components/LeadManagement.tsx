@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,14 +11,14 @@ import {
   Mail, 
   Building,
   Upload,
-  Download,
   Filter,
   PhoneCall,
   MessageSquare,
   Calendar,
   AlertCircle,
   Edit,
-  FileDown
+  Save,
+  X
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAMIContext } from "@/contexts/AMIContext";
@@ -46,6 +46,8 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
   const { initiateCallFromLead } = useAMIContext();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedLeads, setSelectedLeads] = useState<number[]>([]);
+  const [editingLead, setEditingLead] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<Partial<Lead>>({});
   const [leads, setLeads] = useState<Lead[]>([
     {
       id: 1,
@@ -114,6 +116,35 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
     }
   ]);
 
+  // Listen for new leads created from manual calls
+  useEffect(() => {
+    const handleNewLead = (event: CustomEvent) => {
+      const newLead = event.detail;
+      const leadEntry: Lead = {
+        id: Math.max(...leads.map(l => l.id), 0) + 1,
+        name: newLead.name || 'Unknown Contact',
+        company: 'Unknown Company',
+        phone: newLead.phone,
+        email: 'unknown@email.com',
+        status: 'contacted',
+        priority: 'medium',
+        source: 'Manual Call',
+        assignedAgent: 'Current User',
+        lastContact: new Date().toISOString().split('T')[0],
+        notes: newLead.notes || 'Lead created from manual call'
+      };
+      
+      setLeads(prev => [leadEntry, ...prev]);
+      toast({
+        title: "New Lead Added",
+        description: `Lead ${leadEntry.name} created from manual call`,
+      });
+    };
+
+    window.addEventListener('newLeadCreated', handleNewLead as EventListener);
+    return () => window.removeEventListener('newLeadCreated', handleNewLead as EventListener);
+  }, [leads, toast]);
+
   const handleClickToDial = (phone: string, leadName: string, leadId: number) => {
     // Update lead status to show they've been contacted
     setLeads(prevLeads => 
@@ -168,6 +199,34 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
     }
   };
 
+  const handleEditLead = (lead: Lead) => {
+    setEditingLead(lead.id);
+    setEditForm(lead);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingLead || !editForm) return;
+
+    setLeads(prevLeads =>
+      prevLeads.map(lead =>
+        lead.id === editingLead ? { ...lead, ...editForm } : lead
+      )
+    );
+
+    setEditingLead(null);
+    setEditForm({});
+    
+    toast({
+      title: "Lead Updated",
+      description: "Lead information has been saved successfully.",
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingLead(null);
+    setEditForm({});
+  };
+
   const handleBulkAssign = () => {
     if (selectedLeads.length === 0) {
       toast({
@@ -205,6 +264,8 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
       description: "Lead added successfully. You can edit the details.",
     });
   };
+
+  const canEditLeads = userRole === "Manager" || userRole === "Administrator";
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -295,18 +356,6 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
                   </Button>
                 </>
               )}
-              {userRole !== "agent" && (
-                <Button variant="outline" className="flex items-center gap-2">
-                  <Download className="h-4 w-4" />
-                  Export
-                </Button>
-              )}
-              {userRole !== "agent" && (
-                <Button variant="outline" onClick={downloadLeadsTemplate} className="flex items-center gap-2">
-                  <FileDown className="h-4 w-4" />
-                  Download Template
-                </Button>
-              )}
             </div>
           </div>
         </CardHeader>
@@ -331,84 +380,139 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
             {filteredLeads.map((lead) => (
               <Card key={lead.id} className="hover:shadow-md transition-shadow border-l-4 border-l-blue-500">
                 <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      {(userRole === "manager" || userRole === "administrator") && (
-                        <input
-                          type="checkbox"
-                          checked={selectedLeads.includes(lead.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedLeads([...selectedLeads, lead.id]);
-                            } else {
-                              setSelectedLeads(selectedLeads.filter(id => id !== lead.id));
-                            }
-                          }}
-                          className="w-4 h-4"
+                  {editingLead === lead.id ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <Input
+                          value={editForm.name || ''}
+                          onChange={(e) => setEditForm(prev => ({...prev, name: e.target.value}))}
+                          placeholder="Name"
                         />
-                      )}
-                      <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                        <Users className="h-6 w-6 text-blue-600" />
+                        <Input
+                          value={editForm.company || ''}
+                          onChange={(e) => setEditForm(prev => ({...prev, company: e.target.value}))}
+                          placeholder="Company"
+                        />
+                        <Input
+                          value={editForm.phone || ''}
+                          onChange={(e) => setEditForm(prev => ({...prev, phone: e.target.value}))}
+                          placeholder="Phone"
+                        />
+                        <Input
+                          value={editForm.email || ''}
+                          onChange={(e) => setEditForm(prev => ({...prev, email: e.target.value}))}
+                          placeholder="Email"
+                        />
                       </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-semibold text-lg">{lead.name}</h3>
-                          <Badge className={`text-xs ${getStatusColor(lead.status)}`}>
-                            {lead.status}
-                          </Badge>
-                          <AlertCircle className={`h-4 w-4 ${getPriorityColor(lead.priority)}`} />
-                        </div>
-                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <Building className="h-3 w-3" />
-                            {lead.company}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Phone className="h-3 w-3" />
-                            {lead.phone}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Mail className="h-3 w-3" />
-                            {lead.email}
-                          </span>
-                        </div>
-                        <div className="mt-2 text-sm">
-                          <span className="text-gray-600">Assigned to: </span>
-                          <span className="font-medium">{lead.assignedAgent}</span>
-                          <span className="text-gray-600 ml-4">Last Contact: </span>
-                          <span className="font-medium">{lead.lastContact}</span>
-                        </div>
-                        <p className="text-sm text-gray-600 mt-1">{lead.notes}</p>
+                      <textarea
+                        value={editForm.notes || ''}
+                        onChange={(e) => setEditForm(prev => ({...prev, notes: e.target.value}))}
+                        placeholder="Notes"
+                        className="w-full p-2 border rounded"
+                        rows={3}
+                      />
+                      <div className="flex gap-2">
+                        <Button onClick={handleSaveEdit} size="sm">
+                          <Save className="h-3 w-3 mr-1" />
+                          Save
+                        </Button>
+                        <Button onClick={handleCancelEdit} variant="outline" size="sm">
+                          <X className="h-3 w-3 mr-1" />
+                          Cancel
+                        </Button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Button 
-                        size="sm" 
-                        onClick={() => handleClickToDial(lead.phone, lead.name, lead.id)}
-                        className="bg-green-600 hover:bg-green-700 flex items-center gap-1"
-                      >
-                        <PhoneCall className="h-3 w-3" />
-                        Call
-                      </Button>
-                      <Button 
-                        size="sm" 
-                        variant="outline" 
-                        onClick={() => handleUpdateLeadStatus(lead.id, 'qualified')}
-                        className="flex items-center gap-1"
-                      >
-                        <Edit className="h-3 w-3" />
-                        Qualify
-                      </Button>
-                      <Button size="sm" variant="outline" className="flex items-center gap-1">
-                        <MessageSquare className="h-3 w-3" />
-                        Notes
-                      </Button>
-                      <Button size="sm" variant="outline" className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        Schedule
-                      </Button>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        {(userRole === "manager" || userRole === "administrator") && (
+                          <input
+                            type="checkbox"
+                            checked={selectedLeads.includes(lead.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedLeads([...selectedLeads, lead.id]);
+                              } else {
+                                setSelectedLeads(selectedLeads.filter(id => id !== lead.id));
+                              }
+                            }}
+                            className="w-4 h-4"
+                          />
+                        )}
+                        <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                          <Users className="h-6 w-6 text-blue-600" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-semibold text-lg">{lead.name}</h3>
+                            <Badge className={`text-xs ${getStatusColor(lead.status)}`}>
+                              {lead.status}
+                            </Badge>
+                            <AlertCircle className={`h-4 w-4 ${getPriorityColor(lead.priority)}`} />
+                          </div>
+                          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Building className="h-3 w-3" />
+                              {lead.company}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Phone className="h-3 w-3" />
+                              {lead.phone}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Mail className="h-3 w-3" />
+                              {lead.email}
+                            </span>
+                          </div>
+                          <div className="mt-2 text-sm">
+                            <span className="text-gray-600">Assigned to: </span>
+                            <span className="font-medium">{lead.assignedAgent}</span>
+                            <span className="text-gray-600 ml-4">Last Contact: </span>
+                            <span className="font-medium">{lead.lastContact}</span>
+                          </div>
+                          <p className="text-sm text-gray-600 mt-1">{lead.notes}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button 
+                          size="sm" 
+                          onClick={() => handleClickToDial(lead.phone, lead.name, lead.id)}
+                          className="bg-green-600 hover:bg-green-700 flex items-center gap-1"
+                        >
+                          <PhoneCall className="h-3 w-3" />
+                          Call
+                        </Button>
+                        {canEditLeads && (
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            onClick={() => handleEditLead(lead)}
+                            className="flex items-center gap-1"
+                          >
+                            <Edit className="h-3 w-3" />
+                            Edit
+                          </Button>
+                        )}
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          onClick={() => handleUpdateLeadStatus(lead.id, 'qualified')}
+                          className="flex items-center gap-1"
+                        >
+                          <Edit className="h-3 w-3" />
+                          Qualify
+                        </Button>
+                        <Button size="sm" variant="outline" className="flex items-center gap-1">
+                          <MessageSquare className="h-3 w-3" />
+                          Notes
+                        </Button>
+                        <Button size="sm" variant="outline" className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          Schedule
+                        </Button>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </CardContent>
               </Card>
             ))}

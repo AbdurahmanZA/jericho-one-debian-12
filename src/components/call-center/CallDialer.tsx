@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,10 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
       phone: phone,
       notes: notes || 'Lead created from manual call'
     };
+
+    // Dispatch custom event to notify LeadManagement component
+    const event = new CustomEvent('newLeadCreated', { detail: newLead });
+    window.dispatchEvent(event);
 
     if (onLeadCreated) {
       onLeadCreated(newLead);
@@ -126,6 +131,13 @@ const CallDialer = ({ onCallInitiated, disabled, onLeadCreated }: CallDialerProp
         };
 
         onCallInitiated(newCall);
+        
+        // Set up call status monitoring
+        setTimeout(() => {
+          // Update to connected after 3 seconds (simulating answer)
+          const updatedCall = { ...newCall, status: 'connected' as const };
+          onCallInitiated(updatedCall);
+        }, 3000);
         
         toast({
           title: "Call Initiated",
