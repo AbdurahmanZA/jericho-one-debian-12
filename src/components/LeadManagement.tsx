@@ -21,6 +21,7 @@ import {
   FileDown
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAMIContext } from "@/contexts/AMIContext";
 
 interface LeadManagementProps {
   userRole: string;
@@ -42,6 +43,7 @@ interface Lead {
 
 const LeadManagement = ({ userRole }: LeadManagementProps) => {
   const { toast } = useToast();
+  const { initiateCallFromLead } = useAMIContext();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedLeads, setSelectedLeads] = useState<number[]>([]);
   const [leads, setLeads] = useState<Lead[]>([
@@ -122,9 +124,12 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
       )
     );
 
+    // Use AMI context to initiate call
+    initiateCallFromLead(leadName, phone, leadId);
+
     toast({
       title: "Call Initiated",
-      description: `Initiating call to ${leadName} at ${phone}. Switch to Call Center tab to manage the call.`,
+      description: `Call to ${leadName} is being prepared. Switch to Call Center tab to complete the call.`,
     });
 
     // Send Discord notification
@@ -136,8 +141,7 @@ const LeadManagement = ({ userRole }: LeadManagementProps) => {
       );
     }
 
-    // In a real application, this would trigger the call center module
-    console.log('Initiating call:', { phone, leadName, leadId });
+    console.log('Call initiated from leads:', { phone, leadName, leadId });
   };
 
   const handleUpdateLeadStatus = (leadId: number, newStatus: string) => {

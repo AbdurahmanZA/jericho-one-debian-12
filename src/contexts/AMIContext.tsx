@@ -14,6 +14,13 @@ interface AMIConfig {
   password: string;
 }
 
+interface PendingCall {
+  leadName: string;
+  phone: string;
+  leadId: number;
+  timestamp: number;
+}
+
 interface AMIContextType {
   isConnected: boolean;
   isConnecting: boolean;
@@ -21,11 +28,14 @@ interface AMIContextType {
   callEvents: AMIEvent[];
   connectionError: string | null;
   config: AMIConfig;
+  pendingCall: PendingCall | null;
   updateConfig: (newConfig: AMIConfig) => void;
   connect: () => Promise<boolean>;
   disconnect: () => void;
   originateCall: (channel: string, extension: string, context?: string) => Promise<boolean>;
   getActiveChannels: () => Promise<void>;
+  initiateCallFromLead: (leadName: string, phone: string, leadId: number) => void;
+  clearPendingCall: () => void;
 }
 
 const AMIContext = createContext<AMIContextType | undefined>(undefined);
@@ -42,6 +52,8 @@ export const AMIProvider = ({ children }: AMIProviderProps) => {
     password: '70159b4d49108ee8a6d1527edee2d8b50310358f'
   });
 
+  const [pendingCall, setPendingCall] = useState<PendingCall | null>(null);
+
   const amiHook = useAsteriskAMI(config);
 
   const updateConfig = (newConfig: AMIConfig) => {
@@ -55,10 +67,27 @@ export const AMIProvider = ({ children }: AMIProviderProps) => {
     }
   };
 
+  const initiateCallFromLead = (leadName: string, phone: string, leadId: number) => {
+    console.log('Initiating call from lead:', { leadName, phone, leadId });
+    setPendingCall({
+      leadName,
+      phone,
+      leadId,
+      timestamp: Date.now()
+    });
+  };
+
+  const clearPendingCall = () => {
+    setPendingCall(null);
+  };
+
   const value: AMIContextType = {
     ...amiHook,
     config,
-    updateConfig
+    pendingCall,
+    updateConfig,
+    initiateCallFromLead,
+    clearPendingCall
   };
 
   return (

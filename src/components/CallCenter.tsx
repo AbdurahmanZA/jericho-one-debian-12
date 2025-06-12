@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useAMIContext } from "@/contexts/AMIContext";
 import CallDialer from "./call-center/CallDialer";
 import ActiveCallDisplay from "./call-center/ActiveCallDisplay";
 import PostCallActions from "./call-center/PostCallActions";
@@ -32,6 +33,8 @@ interface CallHistoryEntry {
 
 const CallCenter = ({ userRole }: CallCenterProps) => {
   const { toast } = useToast();
+  const { pendingCall, clearPendingCall } = useAMIContext();
+  
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [callNotes, setCallNotes] = useState("");
   const [callOutcome, setCallOutcome] = useState("");
@@ -60,6 +63,46 @@ const CallCenter = ({ userRole }: CallCenterProps) => {
       notes: "Currently satisfied with existing solution"
     }
   ]);
+
+  // Handle pending calls from Lead Management
+  useEffect(() => {
+    if (pendingCall && !activeCall) {
+      console.log('Processing pending call from leads:', pendingCall);
+      
+      const newCall: ActiveCall = {
+        id: `call_${pendingCall.timestamp}`,
+        leadName: pendingCall.leadName,
+        phone: pendingCall.phone,
+        duration: '00:00',
+        status: 'ringing',
+        startTime: new Date(),
+        leadId: pendingCall.leadId.toString()
+      };
+
+      setActiveCall(newCall);
+      clearPendingCall();
+
+      toast({
+        title: "Call from Lead Management",
+        description: `Calling ${pendingCall.leadName} at ${pendingCall.phone}`,
+      });
+
+      // Simulate call connection after 2-4 seconds
+      const connectionDelay = Math.random() * 2000 + 2000;
+      setTimeout(() => {
+        setActiveCall(prev => {
+          if (prev && prev.id === newCall.id) {
+            return { ...prev, status: 'connected', startTime: new Date() };
+          }
+          return prev;
+        });
+        toast({
+          title: "Call Connected",
+          description: `Connected to ${pendingCall.leadName}`,
+        });
+      }, connectionDelay);
+    }
+  }, [pendingCall, activeCall, clearPendingCall, toast]);
 
   // Real-time call timer
   useEffect(() => {
