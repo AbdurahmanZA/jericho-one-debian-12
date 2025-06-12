@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -171,7 +172,7 @@ const IntegrationSettings = () => {
         return true;
       } else {
         const errorData = await response.text();
-        throw new Error(`HTTP ${response.status}: Database connection failed`, errorData);
+        throw new Error(`HTTP ${response.status}: Database connection failed - ${errorData}`);
       }
     } catch (error) {
       setConnectionStatus(prev => ({ ...prev, database: 'disconnected' }));
