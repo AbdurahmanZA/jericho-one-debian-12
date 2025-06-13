@@ -1,10 +1,9 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Settings, Save, TestTube } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import AMIBridgeCard from "./integration/AMIBridgeCard";
+import DirectAMICard from "./integration/DirectAMICard";
 import DatabaseConfigCard from "./integration/DatabaseConfigCard";
 import IntegrationLogsCard from "./integration/IntegrationLogsCard";
 import SyncSettingsCard from "./integration/SyncSettingsCard";
@@ -60,17 +59,17 @@ const IntegrationSettings = () => {
     {
       timestamp: new Date().toISOString(),
       type: 'info',
-      message: 'AMI Bridge integration system initialized'
+      message: 'Direct FreePBX AMI integration initialized'
     },
     {
       timestamp: new Date(Date.now() - 60000).toISOString(),
       type: 'success',
-      message: 'Using AMI Bridge for FreePBX communication'
+      message: 'Using direct AMI connection to localhost FreePBX'
     },
     {
       timestamp: new Date(Date.now() - 120000).toISOString(),
       type: 'success',
-      message: 'Bridge server configured for 192.168.0.5'
+      message: 'Jericho CRM deployed to /jericho directory'
     }
   ]);
 
@@ -236,15 +235,15 @@ const IntegrationSettings = () => {
     }]);
   };
 
-  const handleAMIBridgeConnectionStatusChange = (status: 'connected' | 'disconnected' | 'testing') => {
+  const handleDirectAMIConnectionStatusChange = (status: 'connected' | 'disconnected' | 'testing') => {
     setConnectionStatus(prev => ({ ...prev, amiBridge: status }));
     
     if (status === 'connected') {
-      addLogEntry('success', 'AMI Bridge connection established', 'Successfully connected to FreePBX AMI interface via bridge server');
+      addLogEntry('success', 'Direct AMI connection established', 'Successfully connected to FreePBX AMI interface on localhost:5038');
     } else if (status === 'disconnected') {
-      addLogEntry('warning', 'AMI Bridge connection ended', 'Connection to AMI bridge server was terminated');
+      addLogEntry('warning', 'Direct AMI connection ended', 'Connection to FreePBX AMI was terminated');
     } else {
-      addLogEntry('info', 'Testing AMI Bridge connection...', 'Attempting to establish connection to bridge server');
+      addLogEntry('info', 'Testing direct AMI connection...', 'Attempting to establish connection to localhost FreePBX');
     }
   };
 
@@ -254,15 +253,15 @@ const IntegrationSettings = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
-            Production Integration Settings - AMI Bridge
+            Jericho Integration Settings - Direct FreePBX AMI
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <AMIBridgeCard 
+            <DirectAMICard 
               connectionStatus={connectionStatus.amiBridge}
               onTestConnection={() => {}}
-              onConnectionStatusChange={handleAMIBridgeConnectionStatusChange}
+              onConnectionStatusChange={handleDirectAMIConnectionStatusChange}
             />
 
             <DatabaseConfigCard 

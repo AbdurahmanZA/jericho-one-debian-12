@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { amiBridgeClient } from '@/services/amiBridgeClient';
+import { DirectAMIClient } from '@/services/directAMI';
 
 interface AMIConfig {
   host: string;
@@ -63,19 +63,19 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
   const [pendingCall, setPendingCall] = useState<PendingCall | null>(null);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const [isUserLoggedIn, setIsUserLoggedIn] = useState(false);
-  const [reconnectTimeout, setReconnectTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [amiClient, setAmiClient] = useState<DirectAMIClient | null>(null);
   
   const maxReconnectAttempts = 5;
   
-  // Updated configuration for AMI Bridge to FreePBX using admin credentials
+  // Configuration for localhost FreePBX with direct AMI
   const [config, setConfig] = useState<AMIConfig>({
-    host: '192.168.0.5',
+    host: '127.0.0.1',
     port: '5038',
-    username: 'admin',
-    password: 'amp111'
+    username: 'jericho-ami',
+    password: 'jericho123!'
   });
 
-  // Fix user extension assignment - use stored extension or default to 1000
+  // Get user extension from local storage or default
   const userExtension = localStorage.getItem('user_extension') || '1000';
 
   // Monitor user login status
@@ -88,103 +88,68 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
         setIsUserLoggedIn(isLoggedIn);
         
         if (!isLoggedIn) {
-          // User logged out - disconnect AMI
-          console.log('[AMI Context] User logged out, disconnecting AMI');
+          console.log('[AMI Context] User logged out, disconnecting direct AMI');
           disconnect();
         } else if (isLoggedIn && !isConnected && !isConnecting) {
-          // User logged in - auto-connect
-          console.log('[AMI Context] User logged in, auto-connecting AMI');
+          console.log('[AMI Context] User logged in, auto-connecting direct AMI');
           connect();
         }
       }
     };
 
-    // Check immediately
     checkLoginStatus();
-    
-    // Poll for login status changes
     const interval = setInterval(checkLoginStatus, 1000);
-    
     return () => clearInterval(interval);
   }, [isUserLoggedIn, isConnected, isConnecting]);
 
-  // Auto-reconnect logic
-  const scheduleReconnect = () => {
-    if (reconnectTimeout) {
-      clearTimeout(reconnectTimeout);
-    }
-
-    if (reconnectAttempts >= maxReconnectAttempts) {
-      console.log('[AMI Context] Max reconnection attempts reached');
-      setConnectionError(`Failed to reconnect after ${maxReconnectAttempts} attempts. Please check the AMI Bridge server.`);
-      return;
-    }
-
-    if (!isUserLoggedIn) {
-      console.log('[AMI Context] User not logged in, skipping reconnect');
-      return;
-    }
-
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000); // Exponential backoff, max 30s
-    console.log(`[AMI Context] Scheduling reconnect attempt ${reconnectAttempts + 1} in ${delay}ms`);
-    
-    const timeout = setTimeout(async () => {
-      if (isUserLoggedIn && !isConnected && !isConnecting) {
-        setReconnectAttempts(prev => prev + 1);
-        const success = await connect();
-        if (!success) {
-          scheduleReconnect();
-        }
-      }
-    }, delay);
-    
-    setReconnectTimeout(timeout);
-  };
-
+  // Set up AMI client and event listeners
   useEffect(() => {
-    // Set up event listeners for AMI bridge
-    const handleEvent = (event: AMIEvent) => {
-      setLastEvent(event);
+    if (!amiClient) {
+      const client = new DirectAMIClient(config);
+      setAmiClient(client);
       
-      // Track call-related events
-      if (event.event && ['Newchannel', 'Hangup', 'DialBegin', 'DialEnd', 'Bridge'].includes(event.event)) {
-        setCallEvents(prev => [event, ...prev.slice(0, 9)]); // Keep last 10 events
-      }
-    };
-
-    const handleStatusChange = (connected: boolean) => {
-      console.log(`[AMI Context] Bridge status change: ${connected}`);
-      
-      if (connected && !isConnected) {
-        setIsConnected(true);
-        setConnectionError(null);
-        setReconnectAttempts(0);
-        if (reconnectTimeout) {
-          clearTimeout(reconnectTimeout);
-          setReconnectTimeout(null);
+      // Set up event listeners
+      const handleEvent = (event: AMIEvent) => {
+        setLastEvent(event);
+        
+        // Track call-related events
+        if (event.event && ['Newchannel', 'Hangup', 'DialBegin', 'DialEnd', 'Bridge'].includes(event.event)) {
+          setCallEvents(prev => [event, ...prev.slice(0, 9)]); // Keep last 10 events
         }
-      } else if (!connected && isConnected && isUserLoggedIn) {
-        setIsConnected(false);
-        setConnectionError('Bridge connection lost');
-        // Schedule reconnection
-        scheduleReconnect();
-      }
-    };
+      };
 
-    amiBridgeClient.onEvent(handleEvent);
-    amiBridgeClient.onStatusChange(handleStatusChange);
+      const handleStatusChange = (connected: boolean) => {
+        console.log(`[AMI Context] Direct AMI status change: ${connected}`);
+        setIsConnected(connected);
+        
+        if (connected) {
+          setConnectionError(null);
+          setReconnectAttempts(0);
+        } else if (isUserLoggedIn) {
+          setConnectionError('Direct AMI connection lost');
+        }
+      };
 
-    return () => {
-      amiBridgeClient.removeEventListener(handleEvent);
-      amiBridgeClient.removeStatusListener(handleStatusChange);
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-      }
-    };
-  }, [isConnected, isUserLoggedIn, reconnectAttempts, reconnectTimeout]);
+      client.addEventListener(handleEvent);
+      client.addConnectionListener(handleStatusChange);
+      
+      return () => {
+        client.removeEventListener(handleEvent);
+        client.removeConnectionListener(handleStatusChange);
+      };
+    }
+  }, [amiClient, config, isUserLoggedIn]);
 
   const updateConfig = (newConfig: AMIConfig) => {
     setConfig(newConfig);
+    
+    // Create new client with updated config
+    if (amiClient) {
+      amiClient.disconnect();
+    }
+    
+    const newClient = new DirectAMIClient(newConfig);
+    setAmiClient(newClient);
   };
 
   const connect = async (): Promise<boolean> => {
@@ -193,27 +158,31 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
       return false;
     }
 
+    if (!amiClient) {
+      console.error('[AMI Context] No AMI client available');
+      return false;
+    }
+
     setIsConnecting(true);
     setConnectionError(null);
     
     try {
-      console.log('[AMI Context] Connecting to AMI Bridge with admin credentials:', {
-        serverUrl: 'http://192.168.0.5:3001',
-        amiHost: config.host,
-        amiPort: config.port,
-        amiUser: config.username,
+      console.log('[AMI Context] Connecting to localhost FreePBX AMI:', {
+        host: config.host,
+        port: config.port,
+        username: config.username,
         attempt: reconnectAttempts + 1
       });
       
-      const success = await amiBridgeClient.connect(config);
+      const success = await amiClient.connect();
       
       if (success) {
         setIsConnected(true);
         setConnectionError(null);
         setReconnectAttempts(0);
-        console.log('[AMI Context] Successfully connected to AMI Bridge with admin credentials');
+        console.log('[AMI Context] Successfully connected to FreePBX AMI via direct connection');
       } else {
-        setConnectionError('Failed to connect to AMI Bridge at 192.168.0.5:3001');
+        setConnectionError(`Failed to connect to FreePBX AMI at ${config.host}:${config.port}`);
       }
       
       return success;
@@ -221,7 +190,7 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown connection error';
       setConnectionError(errorMessage);
       setIsConnected(false);
-      console.error('[AMI Context] Connection error:', errorMessage);
+      console.error('[AMI Context] Direct AMI connection error:', errorMessage);
       return false;
     } finally {
       setIsConnecting(false);
@@ -230,22 +199,19 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
 
   const disconnect = async (): Promise<boolean> => {
     try {
-      // Clear any pending reconnect attempts
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-        setReconnectTimeout(null);
+      if (amiClient) {
+        amiClient.disconnect();
       }
       
-      const success = await amiBridgeClient.disconnect();
       setIsConnected(false);
       setConnectionError(null);
       setCallEvents([]);
       setLastEvent(null);
       setPendingCall(null);
       setReconnectAttempts(0);
-      return success;
+      return true;
     } catch (error) {
-      console.error('Disconnect error:', error);
+      console.error('Direct AMI disconnect error:', error);
       return false;
     }
   };
@@ -261,8 +227,13 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
     context = 'from-internal', 
     callerID?: string
   ): Promise<boolean> => {
+    if (!amiClient) {
+      console.error('[AMI Context] No AMI client available for originate call');
+      return false;
+    }
+
     try {
-      console.log('[AMI Context] Originating call via bridge:', {
+      console.log('[AMI Context] Originating call via direct AMI:', {
         channel,
         extension,
         context,
@@ -270,14 +241,9 @@ export const AMIProvider: React.FC<AMIProviderProps> = ({ children }) => {
         userExtension
       });
       
-      return await amiBridgeClient.originateCall({
-        channel,
-        extension,
-        context,
-        callerID
-      });
+      return await amiClient.originateCall(channel, extension, context);
     } catch (error) {
-      console.error('Originate call error:', error);
+      console.error('Direct AMI originate call error:', error);
       return false;
     }
   };
