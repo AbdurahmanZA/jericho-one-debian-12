@@ -39,13 +39,13 @@ get_system_info() {
     export IP_ADDRESS=$(hostname -I | awk '{print $1}')
 }
 
-# Configuration variables
+# Configuration variables for setup-database.sh compatibility
 set_config_vars() {
     export MYSQL_ROOT_PASSWORD="FreePBX2024!"
-    export CRM_DB_NAME="freepbx_crm"
-    export CRM_DB_USER="crm_user"
-    export CRM_DB_PASSWORD="CRM_Pass2024!"
+    export CRM_DB_NAME="${DB_NAME:-freepbx_crm}"
+    export CRM_DB_USER="${DB_USER:-crm_user}"
+    export CRM_DB_PASSWORD="${DB_PASS:-CRM_Pass2024!}"
     export ASTERISK_USER="asterisk"
     export WEB_ROOT="/var/www/html"
-    export CRM_PATH="$WEB_ROOT/crm"
+    export CRM_PATH="${WEB_ROOT}/crm"
 }

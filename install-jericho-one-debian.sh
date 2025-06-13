@@ -8,10 +8,10 @@ set -e
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPTS_DIR="$SCRIPT_DIR/scripts"
+SCRIPTS_DIR="${SCRIPT_DIR}/scripts"
 
 # Source utilities and configuration
-source "$SCRIPTS_DIR/utils.sh"
+source "${SCRIPTS_DIR}/utils.sh"
 
 # Override configuration for Jericho deployment
 override_config_for_jericho() {
@@ -34,11 +34,11 @@ override_config_for_jericho() {
     export DB_PASS="jericho_db_pass_$(date +%s)"
     
     log "Jericho deployment configuration:"
-    log "  CRM Path: $CRM_PATH"
-    log "  Data Path: $CRM_DATA_PATH"
-    log "  Config Path: $JERICHO_CONFIG_PATH"
-    log "  FreePBX Host: $FREEPBX_HOST"
-    log "  AMI Port: $FREEPBX_AMI_PORT"
+    log "  CRM Path: ${CRM_PATH}"
+    log "  Data Path: ${CRM_DATA_PATH}"
+    log "  Config Path: ${JERICHO_CONFIG_PATH}"
+    log "  FreePBX Host: ${FREEPBX_HOST}"
+    log "  AMI Port: ${FREEPBX_AMI_PORT}"
 }
 
 # Create Jericho directory structure
@@ -46,22 +46,22 @@ create_jericho_structure() {
     log "Creating Jericho directory structure..."
     
     # Create main directories
-    mkdir -p "$CRM_PATH"
-    mkdir -p "$CRM_DATA_PATH"
-    mkdir -p "$CRM_LOG_PATH"
-    mkdir -p "$JERICHO_CONFIG_PATH"
-    mkdir -p "$CRM_PATH/assets"
-    mkdir -p "$CRM_PATH/api"
-    mkdir -p "$CRM_DATA_PATH/uploads"
-    mkdir -p "$CRM_DATA_PATH/backups"
+    mkdir -p "${CRM_PATH}"
+    mkdir -p "${CRM_DATA_PATH}"
+    mkdir -p "${CRM_LOG_PATH}"
+    mkdir -p "${JERICHO_CONFIG_PATH}"
+    mkdir -p "${CRM_PATH}/assets"
+    mkdir -p "${CRM_PATH}/api"
+    mkdir -p "${CRM_DATA_PATH}/uploads"
+    mkdir -p "${CRM_DATA_PATH}/backups"
     
     # Set permissions
-    chown -R www-data:www-data "$CRM_PATH"
-    chown -R www-data:www-data "$CRM_DATA_PATH"
-    chown -R www-data:www-data "$CRM_LOG_PATH"
-    chmod -R 755 "$CRM_PATH"
-    chmod -R 750 "$CRM_DATA_PATH"
-    chmod -R 755 "$CRM_LOG_PATH"
+    chown -R www-data:www-data "${CRM_PATH}"
+    chown -R www-data:www-data "${CRM_DATA_PATH}"
+    chown -R www-data:www-data "${CRM_LOG_PATH}"
+    chmod -R 755 "${CRM_PATH}"
+    chmod -R 750 "${CRM_DATA_PATH}"
+    chmod -R 755 "${CRM_LOG_PATH}"
     
     log "Jericho directory structure created successfully"
 }
@@ -71,10 +71,10 @@ configure_freepbx_ami() {
     log "Configuring FreePBX AMI for Jericho..."
     
     # Create AMI user configuration
-    cat > "$JERICHO_CONFIG_PATH/ami.conf" << EOF
+    cat > "${JERICHO_CONFIG_PATH}/ami.conf" << EOF
 # Jericho CRM AMI Configuration
 [jericho-ami]
-secret = $FREEPBX_AMI_SECRET
+secret = ${FREEPBX_AMI_SECRET}
 read = system,call,log,verbose,agent,user,config,dtmf,reporting,cdr,dialplan
 write = system,call,agent,user,config,command,reporting,originate
 deny = 0.0.0.0/0.0.0.0
@@ -88,7 +88,7 @@ EOF
     # Instructions for FreePBX AMI setup
     log "AMI configuration created. Manual FreePBX setup required:"
     log "1. Add the following to /etc/asterisk/manager.conf:"
-    cat "$JERICHO_CONFIG_PATH/ami.conf"
+    cat "${JERICHO_CONFIG_PATH}/ami.conf"
     log "2. Restart Asterisk: sudo systemctl restart asterisk"
     log "3. Verify AMI connection: sudo asterisk -rx 'manager show connected'"
 }
@@ -102,34 +102,34 @@ main() {
     get_system_info
     override_config_for_jericho
     
-    log "Hostname: $HOSTNAME"
-    log "IP Address: $IP_ADDRESS"
-    log "Deployment: Jericho CRM at $CRM_PATH"
+    log "Hostname: ${HOSTNAME}"
+    log "IP Address: ${IP_ADDRESS}"
+    log "Deployment: Jericho CRM at ${CRM_PATH}"
     
     # Execute installation steps
-    source "$SCRIPTS_DIR/check-system.sh"
+    source "${SCRIPTS_DIR}/check-system.sh"
     check_dependencies
     check_system_requirements
     
-    source "$SCRIPTS_DIR/install-packages.sh"
+    source "${SCRIPTS_DIR}/install-packages.sh"
     install_packages
     
     # Create Jericho structure before database setup
     create_jericho_structure
     
-    source "$SCRIPTS_DIR/setup-database.sh"
+    source "${SCRIPTS_DIR}/setup-database.sh"
     setup_database
     
-    source "$SCRIPTS_DIR/configure-webserver.sh"
+    source "${SCRIPTS_DIR}/configure-webserver.sh"
     configure_webserver
     
     # Configure FreePBX AMI integration
     configure_freepbx_ami
     
-    source "$SCRIPTS_DIR/setup-crm.sh"
+    source "${SCRIPTS_DIR}/setup-crm.sh"
     setup_crm_application
     
-    source "$SCRIPTS_DIR/configure-security.sh"
+    source "${SCRIPTS_DIR}/configure-security.sh"
     configure_security
     restart_services
     create_status_script
@@ -147,30 +147,30 @@ display_completion_message() {
     echo "================================================================"
     echo ""
     echo "System Information:"
-    echo "  Hostname: $HOSTNAME"
-    echo "  IP Address: $IP_ADDRESS"
-    echo "  Jericho CRM: http://$IP_ADDRESS/jericho/"
+    echo "  Hostname: ${HOSTNAME}"
+    echo "  IP Address: ${IP_ADDRESS}"
+    echo "  Jericho CRM: http://${IP_ADDRESS}/jericho/"
     echo ""
     echo "Default Credentials:"
     echo "  Username: admin"
     echo "  Password: admin123"
     echo ""
     echo "FreePBX Integration:"
-    echo "  AMI Host: $FREEPBX_HOST"
-    echo "  AMI Port: $FREEPBX_AMI_PORT"
-    echo "  AMI User: $FREEPBX_AMI_USER"
-    echo "  AMI Secret: $FREEPBX_AMI_SECRET"
+    echo "  AMI Host: ${FREEPBX_HOST}"
+    echo "  AMI Port: ${FREEPBX_AMI_PORT}"
+    echo "  AMI User: ${FREEPBX_AMI_USER}"
+    echo "  AMI Secret: ${FREEPBX_AMI_SECRET}"
     echo ""
     echo "Installed Components:"
     echo "  ✓ Apache Web Server (Jericho at /jericho)"
-    echo "  ✓ MySQL Database Server ($DB_NAME)"
+    echo "  ✓ MySQL Database Server (${DB_NAME})"
     echo "  ✓ PHP $(php -v | head -n1 | cut -d' ' -f2)"
     echo "  ✓ Jericho CRM Application"
     echo "  ✓ Direct AMI Integration (no bridge required)"
     echo "  ✓ Security (UFW + Fail2ban)"
     echo ""
     echo "Manual FreePBX Setup Required:"
-    echo "  1. Copy AMI config from: $JERICHO_CONFIG_PATH/ami.conf"
+    echo "  1. Copy AMI config from: ${JERICHO_CONFIG_PATH}/ami.conf"
     echo "  2. Add to /etc/asterisk/manager.conf"
     echo "  3. Restart Asterisk service"
     echo ""
@@ -181,7 +181,7 @@ display_completion_message() {
     echo "  - Configure regular database backups"
     echo ""
     echo "Status Check Command: jericho-status"
-    echo "Installation Details: $CRM_PATH/INSTALLATION_INFO.txt"
+    echo "Installation Details: ${CRM_PATH}/INSTALLATION_INFO.txt"
     echo "================================================================"
 }
 
